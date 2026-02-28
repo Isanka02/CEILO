@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 import e from "express";
+
+dotenv.config();
 export const connectDB = async () => {
 
 try { 
- await mongoose.connect("mongodb+srv://admin:uQgMwVABDW33Hg16@ceilo.y7c9bgq.mongodb.net/ceilo_db?appName=Ceilo");
-
+ await mongoose.connect(process.env.MONGO_URI);
  console.log('Connected to MongoDB');
 } 
 catch (error) {
