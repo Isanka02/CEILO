@@ -1,7 +1,7 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const addressSchema = new mongoose.Schema({
-  label:     { type: String },               // "Home", "Work"
+  label:     { type: String },
   street:    { type: String },
   city:      { type: String },
   state:     { type: String },
@@ -21,4 +21,4 @@ const userSchema = new mongoose.Schema({
   isBlocked:  { type: Boolean, default: false },
 }, { timestamps: true });
 
-module.exports = mongoose.model('User', userSchema);
+export default mongoose.model('User', userSchema);
