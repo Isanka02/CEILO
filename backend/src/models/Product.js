@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const variantSchema = new mongoose.Schema({
   color: { type: String },
@@ -14,11 +14,11 @@ const productSchema = new mongoose.Schema({
   discountPrice: { type: Number },
   images:        [{ type: String }],
   category:      { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
-  tags:          [{ type: String }],       // ["new", "trending", "sale"]
+  tags:          [{ type: String }],
   variants:      [variantSchema],
   averageRating: { type: Number, default: 0 },
   numReviews:    { type: Number, default: 0 },
   isActive:      { type: Boolean, default: true },
 }, { timestamps: true });
 
-module.exports = mongoose.model('Product', productSchema);
+export default mongoose.model('Product', productSchema);
