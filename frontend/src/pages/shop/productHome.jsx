@@ -220,7 +220,12 @@ export default function ProductHome() {
               </p>
               <div className="flex gap-4 flex-wrap">
                 <Link to="/products" className="btn-maroon">Shop Now</Link>
-                <Link to="/shop-reviews" className="btn-outline-light">Our Reviews</Link>
+                <button
+  className="btn-outline-light"
+  onClick={() => document.getElementById('reviews')?.scrollIntoView({ behavior:'smooth' })}
+>
+  Our Reviews
+</button>
               </div>
             </div>
           </div>
