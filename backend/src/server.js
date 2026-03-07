@@ -9,6 +9,8 @@ import categoryRoutes     from './routes/categoryRoutes.js';
 import orderRoutes        from './routes/orderRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import adminRoutes        from './routes/adminRoutes.js';
+import shopReviewRoutes from './routes/shopReviewRoutes.js';
+
 
 dotenv.config();
 connectDB();
@@ -24,6 +26,7 @@ app.use('/api/categories',    categoryRoutes);
 app.use('/api/orders',        orderRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin',         adminRoutes);
+app.use('/api/shop-reviews', shopReviewRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
