@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-// import { forgotPassword } from '../../api/authApi'; // ← connect your API file
+import { forgotPassword } from '../../api/authApi'; // ← connect your API file
 
 export default function ForgotPwd() {
   const [email, setEmail]     = useState('');

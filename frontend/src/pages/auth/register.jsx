@@ -2,11 +2,9 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';    
+import { registerUser } from '../../api/authApi';
 
 
-
-
-// import { registerUser } from '../../api/authApi';
 
 // ─── Validators ───────────────────────────────────────────────────────────────
 const isValidEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());

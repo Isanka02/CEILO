@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
-// import { getProducts } from '../../api/productApi';
-// import { getCategories } from '../../api/categoryApi';
+import { getProducts } from '../../api/productApi';
+import { getCategories } from '../../api/categoryApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
