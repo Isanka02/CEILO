@@ -13,11 +13,24 @@ import shopReviewRoutes from './routes/shopReviewRoutes.js';
 
 
 dotenv.config();
+
+console.log('CLOUDINARY CHECK:', {
+  name: process.env.CLOUDINARY_CLOUD_NAME,
+  key: process.env.CLOUDINARY_API_KEY,
+  secret: process.env.CLOUDINARY_API_SECRET ? '✅ set' : '❌ missing',
+});
+
 connectDB();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+//
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
 
 app.use('/api/auth',          authRoutes);
 app.use('/api/users',         userRoutes);
@@ -41,3 +54,4 @@ app.get('/', (req, res) => res.send('CEILO API running...'));
 
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
