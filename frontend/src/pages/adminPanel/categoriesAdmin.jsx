@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/categoryApi';
+import { getCategories, createCategory, updateCategory, deleteCategory } from '../../api/categoryApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -35,23 +35,30 @@ const validate = f => {
   return e;
 };
 
-// TODO: replace with real data from getCategories() API
-const MOCK_CATS = [
-  { _id:'c1', name:'Accessories', slug:'accessories', parentCategory: null },
-  { _id:'c2', name:'Tops',        slug:'tops',        parentCategory: null },
-  { _id:'c3', name:'Bags',        slug:'bags',        parentCategory: null },
-  { _id:'c4', name:'Jewelry',     slug:'jewelry',     parentCategory: { _id:'c1', name:'Accessories' } },
-];
-
 export default function CategoriesAdmin() {
-  const [cats, setCats]         = useState(MOCK_CATS);
+  const [cats, setCats]         = useState([]);
   const [form, setForm]         = useState(emptyForm);
   const [errors, setErrors]     = useState({});
   const [touched, setTouched]   = useState({});
-  const [editing, setEditing]   = useState(null); // id of cat being edited
+  const [editing, setEditing]   = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [loading, setLoading]   = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getCategories();
+        setCats(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load categories.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const handleChange = e => {
     const { name, value } = e.target;
@@ -73,24 +80,32 @@ export default function CategoriesAdmin() {
   };
 
   const handleSubmit = async e => {
-    e.preventDefault();
-    setTouched({ name: true, slug: true });
-    const errs = validate(form);
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    setLoading(true);
-    try {
-      if (editing) {
-        // await updateCategory(editing, form);
-        setCats(p => p.map(c => c._id === editing ? { ...c, ...form, parentCategory: cats.find(c2 => c2._id === form.parentCategory) || null } : c));
-      } else {
-        // const newCat = await createCategory(form);
-        const newCat = { _id: Date.now().toString(), ...form, parentCategory: cats.find(c => c._id === form.parentCategory) || null };
-        setCats(p => [...p, newCat]);
-      }
-      setForm(emptyForm); setErrors({}); setTouched({}); setEditing(null); setShowForm(false);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
-  };
+  e.preventDefault();
+  setTouched({ name: true, slug: true });
+  const errs = validate(form);
+  if (Object.keys(errs).length) { setErrors(errs); return; }
+  setLoading(true);
+  try {
+    // ✅ Clean payload — convert empty parentCategory to null
+    const payload = {
+      ...form,
+      parentCategory: form.parentCategory || null,
+    };
+
+    if (editing) {
+      const { data } = await updateCategory(editing, payload);
+      setCats(p => p.map(c => c._id === editing ? data : c));
+    } else {
+      const { data } = await createCategory(payload);
+      setCats(p => [...p, data]);
+    }
+    setForm(emptyForm); setErrors({}); setTouched({}); setEditing(null); setShowForm(false);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleEdit = cat => {
     setForm({ name: cat.name, slug: cat.slug, parentCategory: cat.parentCategory?._id || '' });
@@ -99,11 +114,24 @@ export default function CategoriesAdmin() {
 
   const handleDelete = async () => {
     try {
-      // await deleteCategory(deleteId);
+      await deleteCategory(deleteId);
       setCats(p => p.filter(c => c._id !== deleteId));
-    } catch (err) { console.error(err); }
-    finally { setDeleteId(null); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to delete category.');
+    } finally {
+      setDeleteId(null);
+    }
   };
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading categories…</p>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -119,6 +147,12 @@ export default function CategoriesAdmin() {
               {!showForm && <button className="btn-primary" onClick={() => { setShowForm(true); setEditing(null); setForm(emptyForm); }}>+ Add Category</button>}
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '28px' }}>Manage product categories and subcategories</p>
+
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Form */}
             {showForm && (

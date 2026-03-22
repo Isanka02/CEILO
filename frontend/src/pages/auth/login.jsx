@@ -81,10 +81,15 @@ export default function Login() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     try {
-      // const data = await loginUser(form);
-      // saveToAuthContext(data);
-      // navigate('/');
-      console.log('Login payload:', form);
+      const { data } = await loginUser(form);
+      // Save token and user info so other pages and the axios interceptor can use them
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      // Tell CartProvider (in the same tab) to reload the cart for this user.
+      // The 'storage' event normally only fires in OTHER tabs; dispatching it
+      // manually makes it fire in the current tab too.
+      window.dispatchEvent(new StorageEvent('storage', { key: 'user' }));
+      navigate(data.user.role === 'admin' ? '/admin' : '/');
     } catch (err) {
       setApiError(err.response?.data?.message || 'Invalid credentials. Please try again.');
     } finally {

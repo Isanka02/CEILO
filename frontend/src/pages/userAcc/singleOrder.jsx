@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getOrderById, cancelOrder } from '../../api/orderApi';
+import { getOrderById, cancelOrder } from '../../api/orderApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -27,42 +27,66 @@ const STATUS_STYLES = {
 
 const STEPS = ['pending', 'processing', 'shipped', 'delivered'];
 
-// TODO: replace with real data fetched by order ID from API
-const MOCK_ORDER = {
-  _id: 'ORD001',
-  createdAt: '2026-02-14T10:30:00Z',
-  orderStatus: 'shipped',
-  paymentStatus: 'pending',
-  paymentMethod: 'cod',
-  trackingNumber: 'TRK9284710',
-  deliveryMethod: 'Standard Delivery',
-  shippingPrice: 5.00,
-  totalPrice: 128.00,
-  shippingAddress: { street: '123 Elm Street', city: 'Colombo', state: 'Western', zip: '00100', country: 'Sri Lanka' },
-  items: [
-    { product: 'p1', name: 'Silk Blouse', price: 79.00, quantity: 1, color: 'Ivory', size: 'M', image: '' },
-    { product: 'p2', name: 'Leather Belt', price: 44.00, quantity: 1, color: 'Tan',   size: 'S', image: '' },
-  ],
-};
-
 export default function SingleOrder() {
-  const { id }                    = useParams();
-  const [order, setOrder]         = useState(MOCK_ORDER); // TODO: fetch by id
-  const [canceling, setCanceling] = useState(false);
+  const { id }                        = useParams();
+  const [order, setOrder]             = useState(null);
+  const [fetching, setFetching]       = useState(true);
+  const [apiError, setApiError]       = useState('');
+  const [canceling, setCanceling]     = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // ── Fetch order on mount ──────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getOrderById(id);
+        setOrder(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load order.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [id]);
+
   const fmtDate  = d => new Date(d).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-  const fmtPrice = p => `$${p.toFixed(2)}`;
+  const fmtPrice = p => `LKR ${p.toFixed(2)}`;
 
   const handleCancel = async () => {
     setCanceling(true);
     try {
-      // await cancelOrder(order._id);
+      await cancelOrder(order._id);
       setOrder(p => ({ ...p, orderStatus: 'canceled' }));
       setShowConfirm(false);
-    } catch (err) { console.error(err); }
-    finally { setCanceling(false); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to cancel order.');
+    } finally {
+      setCanceling(false);
+    }
   };
+
+  // ── Loading / error / not-found states ───────────────────────────────────
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading order…</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  if (!order) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: '#C53030', fontFamily: "'Jost',sans-serif" }}>{apiError || 'Order not found.'}</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   const st = STATUS_STYLES[order.orderStatus] || STATUS_STYLES.pending;
   const stepIndex = STEPS.indexOf(order.orderStatus);

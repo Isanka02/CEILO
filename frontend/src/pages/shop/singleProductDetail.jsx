@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
-// import { getProductBySlug } from '../../api/productApi';
-// import { saveItem, removeSavedItem } from '../../api/userApi';
+import { getProductBySlug, getProductReviews, getProducts } from '../../api/productApi';
+import { saveItem, removeSavedItem } from '../../api/userApi';
+import { useCart } from '../../context/useCart';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Jost:wght@300;400;500&display=swap');
@@ -30,35 +31,6 @@ const STYLES = `
   .rel-img { width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#F0EAE5;transition:transform .5s ease; }
 `;
 
-// TODO: replace with real data from getProductBySlug(slug) API
-const MOCK_PRODUCT = {
-  _id:'p1', name:'Silk Draped Blouse', slug:'silk-draped-blouse',
-  description:'Crafted from the finest mulberry silk, this draped blouse falls effortlessly over the body with an elegant fluidity. The relaxed silhouette is elevated by subtle gathering at the shoulders and a delicate tie detail at the waist. Perfect for both day and evening wear.',
-  price:89, discountPrice:69,
-  images:['','',''],
-  category:{ _id:'c2', name:'Tops', slug:'tops' },
-  tags:['silk','luxury','blouse'],
-  variants:[
-    { color:'Ivory', size:'XS', stock:3 },{ color:'Ivory', size:'S', stock:8 },{ color:'Ivory', size:'M', stock:5 },
-    { color:'Blush', size:'S',  stock:2 },{ color:'Blush', size:'M', stock:6 },{ color:'Blush', size:'L', stock:4 },
-    { color:'Black', size:'M',  stock:0 },{ color:'Black', size:'L', stock:7 },
-  ],
-  averageRating:4.8, numReviews:12, isActive:true,
-};
-
-const MOCK_REVIEWS = [
-  { _id:'rv1', user:{ name:'Amara S.' }, rating:5, comment:'Absolutely beautiful. The silk is incredibly soft and the drape is perfect. Already ordered in another color!', createdAt:'2026-02-28' },
-  { _id:'rv2', user:{ name:'Priya M.' }, rating:5, comment:'Fits true to size. Elegant and versatile — wore it to a dinner and received so many compliments.', createdAt:'2026-02-20' },
-  { _id:'rv3', user:{ name:'Kavya P.' }, rating:4, comment:'Lovely quality. The ivory shade is more cream than pure white which actually photographs beautifully.', createdAt:'2026-02-10' },
-];
-
-const RELATED = [
-  { _id:'p2',name:'Pearl Drop Necklace', slug:'pearl-drop-necklace', price:80, discountPrice:64, images:[''], category:{ name:'Jewelry' } },
-  { _id:'p3',name:'Chain Belt',          slug:'chain-belt',          price:55, discountPrice:null,images:[''], category:{ name:'Accessories' } },
-  { _id:'p4',name:'Satin Slip Dress',    slug:'satin-slip-dress',    price:130,discountPrice:99, images:[''], category:{ name:'Tops' } },
-  { _id:'p5',name:'Velvet Clutch',       slug:'velvet-clutch',       price:95, discountPrice:75, images:[''], category:{ name:'Bags' } },
-];
-
 const StarRow = ({ n, size = 16 }) => (
   <div className="flex items-center gap-0.5">
     {[1,2,3,4,5].map(i => (
@@ -70,37 +42,126 @@ const StarRow = ({ n, size = 16 }) => (
 );
 
 export default function SingleProductDetail() {
-  const { slug } = useParams();
-  const product  = MOCK_PRODUCT; // TODO: fetch by slug
-
-  const colors  = [...new Set(product.variants.map(v => v.color))];
-  const sizes   = [...new Set(product.variants.map(v => v.size))];
-
+  const { slug }                    = useParams();
+  const { addToCart }               = useCart();
+  const [product, setProduct]       = useState(null);
+  const [reviews, setReviews]       = useState([]);
+  const [related, setRelated]       = useState([]);
+  const [fetching, setFetching]     = useState(true);
+  const [apiError, setApiError]     = useState('');
   const [activeImg, setActiveImg]   = useState(0);
-  const [selColor, setSelColor]     = useState(colors[0] || '');
+  const [selColor, setSelColor]     = useState('');
   const [selSize, setSelSize]       = useState('');
   const [qty, setQty]               = useState(1);
   const [tab, setTab]               = useState('description');
   const [saved, setSaved]           = useState(false);
   const [addedMsg, setAddedMsg]     = useState('');
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [showSizeGuide, setShowSizeGuide] = useState(false);
+
+  useEffect(() => {
+    setFetching(true);
+    (async () => {
+      try {
+        const [prodRes, revRes] = await Promise.all([
+          getProductBySlug(slug),
+          getProductReviews(slug),
+        ]);
+        setProduct(prodRes.data);
+        setReviews(revRes.data);
+        // Fetch related products from same category
+        if (prodRes.data?.category?._id) {
+          try {
+            const { data: rel } = await getProducts({ category: prodRes.data.category._id, limit: 4 });
+            // Exclude current product from related list
+            const relProducts = (rel.products ?? rel).filter(p => p.slug !== slug);
+            setRelated(relProducts.slice(0, 4));
+          } catch { /* silently ignore */ }
+        }
+        // Set default color to first variant's color
+        const firstColor = [...new Set((prodRes.data.variants || []).map(v => v.color))][0] || '';
+        setSelColor(firstColor);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load product.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [slug]);
+
+  const colors  = product ? [...new Set(product.variants.map(v => v.color))] : [];
+  const sizes   = product ? [...new Set(product.variants.map(v => v.size))]  : [];
 
   const getStock = () => {
-    if (!selColor || !selSize) return null;
+    if (!product || !selColor || !selSize) return null;
     const v = product.variants.find(v => v.color === selColor && v.size === selSize);
     return v ? v.stock : null;
   };
-  const stock = getStock();
+  const stock   = getStock();
   const inStock = stock === null ? true : stock > 0;
 
+  // Wire up add-to-cart to CartContext
   const handleAddToCart = () => {
-    if (!selSize) { alert('Please select a size.'); return; }
-    // TODO: add to cart context / API
-    console.log('Add to cart:', { product: product._id, color: selColor, size: selSize, qty });
+    // Only require size selection if this product actually has size variants
+    if (sizes.length > 0 && !selSize) {
+      setAddedMsg('⚠ Please select a size first.');
+      setTimeout(() => setAddedMsg(''), 2500);
+      return;
+    }
+    addToCart({
+      _id:   product._id,
+      name:  product.name,
+      slug:  product.slug,
+      image: product.images?.[0] || '',
+      price: product.discountPrice || product.price,
+      color: selColor || undefined,
+      size:  selSize  || undefined,
+    }, qty);
     setAddedMsg('Added to cart!');
     setTimeout(() => setAddedMsg(''), 2500);
   };
 
+  const handleToggleSave = async () => {
+    if (!product) return;
+    setSaveLoading(true);
+    try {
+      if (saved) {
+        await removeSavedItem(product._id);
+        setSaved(false);
+      } else {
+        await saveItem(product._id);
+        setSaved(true);
+      }
+    } catch {
+      // silently ignore — user may not be logged in
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
   const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background:'var(--cream)' }}>
+        <p style={{ fontSize:'0.85rem', color:'var(--muted)', fontFamily:"'Jost',sans-serif" }}>Loading product…</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  if (!product) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background:'var(--cream)' }}>
+        <p style={{ fontSize:'0.85rem', color:'#C53030', fontFamily:"'Jost',sans-serif" }}>{apiError || 'Product not found.'}</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
@@ -173,14 +234,14 @@ export default function SingleProductDetail() {
               <div className="flex items-baseline gap-3 mb-6 pb-6" style={{ borderBottom:'1px solid var(--border)' }}>
                 {product.discountPrice ? (
                   <>
-                    <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.8rem',fontWeight:700,color:'var(--maroon)' }}>${product.discountPrice}</span>
-                    <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.2rem',color:'var(--muted)',textDecoration:'line-through' }}>${product.price}</span>
+                    <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.8rem',fontWeight:700,color:'var(--maroon)' }}>LKR {product.discountPrice}</span>
+                    <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.2rem',color:'var(--muted)',textDecoration:'line-through' }}>LKR {product.price}</span>
                     <span style={{ fontSize:'0.72rem',fontWeight:600,color:'#276749',background:'rgba(56,161,105,.1)',padding:'3px 8px',borderRadius:'99px' }}>
                       {Math.round((1 - product.discountPrice / product.price) * 100)}% off
                     </span>
                   </>
                 ) : (
-                  <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.8rem',fontWeight:700,color:'var(--charcoal)' }}>${product.price}</span>
+                  <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.8rem',fontWeight:700,color:'var(--charcoal)' }}>LKR {product.price}</span>
                 )}
               </div>
 
@@ -201,10 +262,19 @@ export default function SingleProductDetail() {
               {/* Size selector */}
               {sizes.length > 0 && (
                 <div className="mb-5">
-                  <p style={{ fontSize:'0.72rem',letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--muted)',marginBottom:'10px' }}>Size</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p style={{ fontSize:'0.72rem',letterSpacing:'0.1em',textTransform:'uppercase',color:'var(--muted)' }}>
+                      Size {selSize && <span style={{ color:'var(--charcoal)',fontWeight:500 }}>— {selSize}</span>}
+                    </p>
+                    <button
+                      onClick={() => setShowSizeGuide(true)}
+                      style={{ fontSize:'0.68rem',color:'var(--maroon)',background:'none',border:'none',cursor:'pointer',letterSpacing:'0.06em',textTransform:'uppercase',textDecoration:'underline',padding:0 }}>
+                      Size Guide
+                    </button>
+                  </div>
                   <div className="flex gap-2 flex-wrap">
                     {sizes.map(s => {
-                      const v = product.variants.find(v => v.color === selColor && v.size === s);
+                      const v = product.variants.find(v => (!selColor || v.color === selColor) && v.size === s);
                       const outOfStock = v ? v.stock === 0 : false;
                       return (
                         <button key={s} className={`variant-btn${selSize === s ? ' active' : ''}`}
@@ -216,6 +286,7 @@ export default function SingleProductDetail() {
                       );
                     })}
                   </div>
+                  {!selSize && <p style={{ fontSize:'0.7rem',color:'#C05621',marginTop:'6px' }}>Please select a size to continue.</p>}
                 </div>
               )}
 
@@ -239,13 +310,20 @@ export default function SingleProductDetail() {
               </div>
 
               {addedMsg && (
-                <div className="mb-3 px-4 py-2 rounded-sm flex items-center gap-2 text-sm" style={{ background:'rgba(56,161,105,.1)',color:'#276749',border:'1px solid rgba(56,161,105,.25)' }}>
-                  <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                  {addedMsg}
+                <div className="mb-3 px-4 py-2 rounded-sm flex items-center gap-2 text-sm" style={{
+                  background: addedMsg.startsWith('⚠') ? 'rgba(221,107,32,.08)' : 'rgba(56,161,105,.1)',
+                  color:      addedMsg.startsWith('⚠') ? '#C05621' : '#276749',
+                  border:     addedMsg.startsWith('⚠') ? '1px solid rgba(221,107,32,.25)' : '1px solid rgba(56,161,105,.25)',
+                }}>
+                  {addedMsg.startsWith('⚠')
+                    ? <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    : <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  }
+                  {addedMsg.replace('⚠ ', '')}
                 </div>
               )}
 
-              <button className="btn-wishlist" onClick={() => setSaved(p => !p)}>
+              <button className="btn-wishlist" onClick={handleToggleSave} disabled={saveLoading}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill={saved?'currentColor':'none'} stroke="currentColor" strokeWidth="1.8">
                   <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
                 </svg>
@@ -277,16 +355,10 @@ export default function SingleProductDetail() {
             {tab === 'description' ? (
               <div className="max-w-2xl" style={{ fontSize:'0.88rem',color:'var(--charcoal)',lineHeight:1.9 }}>
                 <p>{product.description}</p>
-                <ul className="mt-5" style={{ paddingLeft:'18px',display:'flex',flexDirection:'column',gap:'6px' }}>
-                  <li>100% Mulberry Silk</li>
-                  <li>Dry clean recommended</li>
-                  <li>Model is 5'8" wearing size S</li>
-                  <li>True to size — see size guide</li>
-                </ul>
               </div>
             ) : (
               <div className="max-w-2xl">
-                {MOCK_REVIEWS.map(r => (
+                {reviews.map(r => (
                   <div key={r._id} className="review-item">
                     <div className="flex items-center justify-between mb-2">
                       <div>
@@ -309,7 +381,7 @@ export default function SingleProductDetail() {
           <div className="mt-16">
             <h2 style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.5rem',fontWeight:600,color:'var(--charcoal)',marginBottom:'24px' }}>You May Also Like</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {RELATED.map(p => (
+              {related.map(p => (
                 <Link key={p._id} to={`/products/${p.slug}`} style={{ textDecoration:'none' }}>
                   <div className="related-card">
                     {/* IMAGE: related product — 3:4 portrait */}
@@ -326,8 +398,8 @@ export default function SingleProductDetail() {
                       <p style={{ fontSize:'0.82rem',fontWeight:500,color:'var(--charcoal)',marginBottom:'5px',lineHeight:1.3 }}>{p.name}</p>
                       <div className="flex items-center gap-2">
                         {p.discountPrice
-                          ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'0.95rem',fontWeight:600,color:'var(--maroon)' }}>${p.discountPrice}</span><span style={{ fontSize:'0.72rem',color:'var(--muted)',textDecoration:'line-through' }}>${p.price}</span></>
-                          : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'0.95rem',fontWeight:600,color:'var(--charcoal)' }}>${p.price}</span>
+                          ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'0.95rem',fontWeight:600,color:'var(--maroon)' }}>LKR {p.discountPrice}</span><span style={{ fontSize:'0.72rem',color:'var(--muted)',textDecoration:'line-through' }}>LKR {p.price}</span></>
+                          : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'0.95rem',fontWeight:600,color:'var(--charcoal)' }}>LKR {p.price}</span>
                         }
                       </div>
                     </div>
@@ -338,6 +410,49 @@ export default function SingleProductDetail() {
           </div>
         </div>
       </div>
+
+      {/* Size Guide Modal */}
+      {showSizeGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background:'rgba(0,0,0,0.45)' }} onClick={() => setShowSizeGuide(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:'4px', padding:'36px 32px', maxWidth:'520px', width:'90%', maxHeight:'80vh', overflowY:'auto' }}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.4rem', fontWeight:600, color:'var(--charcoal)' }}>Size Guide</h3>
+              <button onClick={() => setShowSizeGuide(false)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--muted)', fontSize:'1.2rem', lineHeight:1 }}>✕</button>
+            </div>
+            <p style={{ fontSize:'0.78rem', color:'var(--muted)', marginBottom:'20px', lineHeight:1.7 }}>
+              All measurements are in centimetres. Measure yourself and compare to the chart below for the best fit.
+            </p>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.8rem', color:'var(--charcoal)' }}>
+              <thead>
+                <tr style={{ borderBottom:'2px solid var(--border)', background:'#FAF7F4' }}>
+                  {['Size','Chest','Waist','Hips','Length'].map(h => (
+                    <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontWeight:500, fontSize:'0.68rem', letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--muted)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['XS','80–84','62–66','88–92','56'],
+                  ['S', '84–88','66–70','92–96','57'],
+                  ['M', '88–94','70–76','96–102','58'],
+                  ['L', '94–100','76–82','102–108','59'],
+                  ['XL','100–108','82–90','108–116','60'],
+                  ['XXL','108–116','90–98','116–124','61'],
+                ].map(([size, ...rest], i) => (
+                  <tr key={size} style={{ borderBottom:'1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FDFAF8' }}>
+                    <td style={{ padding:'10px 12px', fontWeight:600, color:'var(--maroon)' }}>{size}</td>
+                    {rest.map((v, j) => <td key={j} style={{ padding:'10px 12px' }}>{v}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p style={{ fontSize:'0.72rem', color:'var(--muted)', marginTop:'16px', lineHeight:1.6 }}>
+              <strong style={{ color:'var(--charcoal)' }}>Tip:</strong> If you're between sizes, we recommend sizing up for a more relaxed fit.
+            </p>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </>
   );

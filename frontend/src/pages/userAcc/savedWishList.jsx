@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getSavedItems, removeSavedItem } from '../../api/userApi';
+import { getSavedItems, removeSavedItem } from '../../api/userApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -17,27 +17,52 @@ const STYLES = `
   .remove-btn:hover { background:#fff;color:#C53030; }
 `;
 
-// TODO: replace with real saved items fetched from API
-const MOCK_ITEMS = [
-  { _id: 'p1', name: 'Silk Draped Blouse', slug: 'silk-draped-blouse', price: 89.00, discountPrice: 69.00, images: [''], category: { name: 'Tops' } },
-  { _id: 'p2', name: 'Maroon Leather Tote', slug: 'maroon-leather-tote', price: 145.00, discountPrice: null, images: [''], category: { name: 'Bags' } },
-  { _id: 'p3', name: 'Gold Hoop Earrings', slug: 'gold-hoop-earrings', price: 42.00, discountPrice: null, images: [''], category: { name: 'Jewelry' } },
-];
-
 export default function SavedWishList() {
-  const [items, setItems] = useState(MOCK_ITEMS);
+  const [items, setItems]       = useState([]);
   const [removing, setRemoving] = useState(null);
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getSavedItems();
+        setItems(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load saved items. Please refresh.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const handleRemove = async (productId) => {
     setRemoving(productId);
     try {
-      // await removeSavedItem(productId);
-      setItems(p => p.filter(i => i._id !== productId));
-    } catch (err) { console.error(err); }
-    finally { setRemoving(null); }
+      const { data } = await removeSavedItem(productId);
+      // Backend returns updated savedItems array of product IDs;
+      // filter local items to keep only what's still saved
+      const savedIds = data.map(id => id.toString());
+      setItems(p => p.filter(i => savedIds.includes(i._id.toString())));
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to remove item.');
+    } finally {
+      setRemoving(null);
+    }
   };
 
   const fmtPrice = p => `$${p.toFixed(2)}`;
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading saved items…</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
@@ -53,6 +78,13 @@ export default function SavedWishList() {
               <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '32px' }}>Your curated wishlist</p>
+
+            {/* API error */}
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {items.length === 0 ? (
               <div className="text-center py-16" style={{ border: '1px dashed var(--border)', borderRadius: '4px' }}>

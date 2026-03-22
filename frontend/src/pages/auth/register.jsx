@@ -105,10 +105,12 @@ export default function Register() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     try {
-      // const data = await registerUser({ name: form.name, email: form.email, password: form.password });
-      // saveToAuthContext(data);
-      // navigate('/');
-      console.log('Register payload:', { name: form.name, email: form.email });
+      const { data } = await registerUser({ name: form.name, email: form.email, password: form.password });
+      // Save token and user so the axios interceptor and other pages can use them
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'user' }));
+      navigate('/');
     } catch (err) {
       setApiError(err.response?.data?.message || 'Registration failed. Please try again.');
     } finally {

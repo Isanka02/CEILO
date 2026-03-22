@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
-import { getReviews, addReview } from '../../api/productApi';
-import { getProductBySlug } from '../../api/productApi';
+import { getProductBySlug, getProductReviews, addProductReview } from '../../api/productApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -22,16 +21,6 @@ const STYLES = `
   .star-btn { background:none;border:none;cursor:pointer;padding:2px;transition:transform .15s; }
   .star-btn:hover { transform:scale(1.15); }
 `;
-
-// TODO: replace with real data
-const MOCK_PRODUCT = { _id:'p1', name:'Silk Draped Blouse', slug:'silk-draped-blouse', price:89, discountPrice:69, images:[''], averageRating:4.8, numReviews:12, category:{ name:'Tops' } };
-const MOCK_REVIEWS = [
-  { _id:'rv1', user:{ name:'Amara S.',  avatar:'' }, rating:5, comment:'Absolutely beautiful. The silk is incredibly soft and the drape is perfect. Already ordered in another color!', createdAt:'2026-02-28' },
-  { _id:'rv2', user:{ name:'Priya M.',  avatar:'' }, rating:5, comment:'Fits true to size. Elegant and versatile — wore it to a dinner and received so many compliments.', createdAt:'2026-02-20' },
-  { _id:'rv3', user:{ name:'Kavya P.',  avatar:'' }, rating:4, comment:'Lovely quality. The ivory shade is more cream than pure white which actually photographs beautifully.', createdAt:'2026-02-10' },
-  { _id:'rv4', user:{ name:'Riya F.',   avatar:'' }, rating:5, comment:'Worth every penny. Fast delivery, beautifully packaged, and the blouse is even nicer in person.', createdAt:'2026-01-30' },
-  { _id:'rv5', user:{ name:'Nadia R.',  avatar:'' }, rating:4, comment:'Gorgeous fabric. A bit delicate for daily wear but perfect for occasions. Will treasure it.', createdAt:'2026-01-22' },
-];
 
 const StarRating = ({ rating, size = 16 }) => (
   <div className="flex items-center gap-0.5">
@@ -58,16 +47,36 @@ const StarPicker = ({ value, onChange }) => (
 
 export default function Reviews() {
   const { slug }                    = useParams();
-  const product                     = MOCK_PRODUCT; // TODO: fetch by slug
-  const [reviews, setReviews]       = useState(MOCK_REVIEWS);
+  const [product, setProduct]       = useState(null);
+  const [reviews, setReviews]       = useState([]);
   const [form, setForm]             = useState({ rating:0, comment:'' });
   const [errors, setErrors]         = useState({});
   const [loading, setLoading]       = useState(false);
+  const [fetching, setFetching]     = useState(true);
+  const [apiError, setApiError]     = useState('');
   const [success, setSuccess]       = useState('');
   const [filter, setFilter]         = useState('all');
 
-  // TODO: replace with real auth context
-  const isLoggedIn = false;
+  // Read auth from localStorage — replace with useAuth() if you have a context
+  const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+  const isLoggedIn = !!storedUser;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [prodRes, revRes] = await Promise.all([
+          getProductBySlug(slug),
+          getProductReviews(slug),
+        ]);
+        setProduct(prodRes.data);
+        setReviews(revRes.data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load product.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [slug]);
 
   const avgRating = reviews.length ? (reviews.reduce((s,r) => s + r.rating, 0) / reviews.length).toFixed(1) : '0.0';
   const ratingCounts = [5,4,3,2,1].map(n => ({ n, count: reviews.filter(r => r.rating===n).length, pct: reviews.length ? Math.round(reviews.filter(r=>r.rating===n).length/reviews.length*100) : 0 }));
@@ -88,18 +97,43 @@ export default function Reviews() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     try {
-      // const review = await addReview(product._id, form);
-      const mock = { _id: Date.now().toString(), user:{ name:'You', avatar:'' }, rating:form.rating, comment:form.comment, createdAt: new Date().toISOString().slice(0,10) };
-      setReviews(p => [mock, ...p]);
+      const { data: review } = await addProductReview(product._id, form);
+      setReviews(p => [review, ...p]);
       setForm({ rating:0, comment:'' }); setErrors({});
       setSuccess('Review submitted! Thank you.');
       setTimeout(() => setSuccess(''), 4000);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to submit review.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const initials = name => name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  // ── FIX: guard against undefined name ──────────────────────────────────────
+  const initials = name => (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const fmtDate  = d => new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background:'var(--cream)' }}>
+        <p style={{ fontSize:'0.85rem', color:'var(--muted)', fontFamily:"'Jost',sans-serif" }}>Loading…</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  if (!product) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background:'var(--cream)' }}>
+        <p style={{ fontSize:'0.85rem', color:'#C53030', fontFamily:"'Jost',sans-serif" }}>{apiError || 'Product not found.'}</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
@@ -140,8 +174,8 @@ export default function Reviews() {
             </div>
             <div className="hidden md:flex gap-4">
               {product.discountPrice
-                ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.3rem',fontWeight:700,color:'var(--maroon)' }}>${product.discountPrice}</span><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',color:'var(--muted)',textDecoration:'line-through',alignSelf:'center' }}>${product.price}</span></>
-                : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.3rem',fontWeight:700,color:'var(--charcoal)' }}>${product.price}</span>
+                ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.3rem',fontWeight:700,color:'var(--maroon)' }}>LKR {product.discountPrice}</span><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',color:'var(--muted)',textDecoration:'line-through',alignSelf:'center' }}>LKR{product.price}</span></>
+                : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.3rem',fontWeight:700,color:'var(--charcoal)' }}>LKR {product.price}</span>
               }
             </div>
           </div>
@@ -183,6 +217,11 @@ export default function Reviews() {
                       <div className="mb-4 px-3 py-2 rounded-sm flex items-center gap-2 text-xs" style={{ background:'rgba(56,161,105,.1)',color:'#276749',border:'1px solid rgba(56,161,105,.25)' }}>
                         <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                         {success}
+                      </div>
+                    )}
+                    {apiError && (
+                      <div className="mb-4 px-3 py-2 rounded-sm text-xs" style={{ background:'rgba(197,48,48,.08)', color:'#C53030', border:'1px solid rgba(197,48,48,.2)' }}>
+                        {apiError}
                       </div>
                     )}
                     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
@@ -229,13 +268,13 @@ export default function Reviews() {
                         <div className="flex items-center gap-3">
                           {/* IMAGE: user avatar 40×40px circular */}
                           <div className="avatar">
-                            {review.user.avatar
+                            {review.user?.avatar
                               ? <img src={review.user.avatar} alt="" style={{ width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%' }} />
-                              : initials(review.user.name)
+                              : initials(review.user?.name)
                             }
                           </div>
                           <div>
-                            <p style={{ fontSize:'0.85rem',fontWeight:500,color:'var(--charcoal)',marginBottom:'3px' }}>{review.user.name}</p>
+                            <p style={{ fontSize:'0.85rem',fontWeight:500,color:'var(--charcoal)',marginBottom:'3px' }}>{review.user?.name || 'Anonymous'}</p>
                             <StarRating rating={review.rating} size={13}/>
                           </div>
                         </div>

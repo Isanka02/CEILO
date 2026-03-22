@@ -13,8 +13,7 @@ export default function ForgotPwd() {
     setError('');
     setLoading(true);
     try {
-      // await forgotPassword({ email });
-      console.log('Forgot password for:', email);
+      await forgotPassword({ email });
       setSent(true);
     } catch (err) {
       setError(err.response?.data?.message || 'Something went wrong. Please try again.');

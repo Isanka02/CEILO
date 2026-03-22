@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getProducts, createProduct, updateProduct, deleteProduct } from '../../api/productApi';
-// import { getCategories } from '../../api/categoryApi';
+import { getProducts, createProduct, updateProduct, deleteProduct } from '../../api/productApi';
+import { getCategories } from '../../api/categoryApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -46,18 +46,9 @@ const validate = f => {
   return e;
 };
 
-// TODO: replace with real data from API
-const MOCK_CATS = [
-  { _id:'c1', name:'Accessories' }, { _id:'c2', name:'Tops' }, { _id:'c3', name:'Bags' }, { _id:'c4', name:'Jewelry' },
-];
-const MOCK_PRODUCTS = [
-  { _id:'p1', name:'Silk Draped Blouse', slug:'silk-draped-blouse', price:89.00, discountPrice:69.00, category:{ name:'Tops' }, isActive:true, numReviews:12, images:[''] },
-  { _id:'p2', name:'Maroon Leather Tote', slug:'maroon-leather-tote', price:145.00, discountPrice:null, category:{ name:'Bags' }, isActive:true, numReviews:8, images:[''] },
-  { _id:'p3', name:'Gold Hoop Earrings', slug:'gold-hoop-earrings', price:42.00, discountPrice:null, category:{ name:'Jewelry' }, isActive:false, numReviews:21, images:[''] },
-];
-
 export default function ProductAdmin() {
-  const [products, setProducts] = useState(MOCK_PRODUCTS);
+  const [products, setProducts] = useState([]);
+  const [cats, setCats]         = useState([]);
   const [search, setSearch]     = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState(null);
@@ -66,9 +57,25 @@ export default function ProductAdmin() {
   const [touched, setTouched]   = useState({});
   const [loading, setLoading]   = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const [images, setImages]     = useState([]);    // File objects for new uploads
-  const [previews, setPreviews] = useState([]);    // preview URLs
+  const [images, setImages]     = useState([]);
+  const [previews, setPreviews] = useState([]);
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
   const fileRef = useRef();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [prodRes, catRes] = await Promise.all([getProducts(), getCategories()]);
+        setProducts(prodRes.data.products ?? prodRes.data);
+        setCats(catRes.data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load data.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const filtered = products.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -112,36 +119,70 @@ export default function ProductAdmin() {
   const resetForm = () => { setForm(emptyForm); setImages([]); setPreviews([]); setErrors({}); setTouched({}); setEditing(null); setShowForm(false); };
 
   const handleSubmit = async e => {
-    e.preventDefault();
-    const allTouched = Object.fromEntries(Object.keys(form).map(k => [k, true]));
-    setTouched(allTouched);
-    const errs = validate(form);
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      Object.entries(form).forEach(([k, v]) => formData.append(k, v));
-      images.forEach(img => formData.append('images', img));
-      if (editing) {
-        // await updateProduct(editing, formData);
-        setProducts(p => p.map(pr => pr._id === editing ? { ...pr, ...form, category: MOCK_CATS.find(c => c._id === form.category) || pr.category } : pr));
-      } else {
-        // const newProd = await createProduct(formData);
-        const newProd = { _id: Date.now().toString(), ...form, images: previews, numReviews: 0, category: MOCK_CATS.find(c => c._id === form.category) || { name: '' } };
-        setProducts(p => [newProd, ...p]);
-      }
-      resetForm();
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
-  };
+  e.preventDefault();
+  const allTouched = Object.fromEntries(Object.keys(form).map(k => [k, true]));
+  setTouched(allTouched);
+  const errs = validate(form);
+  if (Object.keys(errs).length) { setErrors(errs); return; }
+  setLoading(true);
+  try {
+    const formData = new FormData();
+    
+    // ✅ Handle each field carefully
+    formData.append('name', form.name);
+    formData.append('slug', form.slug);
+    formData.append('description', form.description);
+    formData.append('price', form.price);
+    formData.append('category', form.category);
+    formData.append('isActive', form.isActive);
+    
+    // ✅ Only append discountPrice if it has a value
+    if (form.discountPrice) formData.append('discountPrice', form.discountPrice);
+    
+    // ✅ Handle tags — send as individual values
+    if (form.tags) {
+      form.tags.split(',').map(t => t.trim()).filter(Boolean)
+        .forEach(tag => formData.append('tags', tag));
+    }
+
+    // ✅ Append images
+    images.forEach(img => formData.append('images', img));
+
+    if (editing) {
+      const { data } = await updateProduct(editing, formData);
+      setProducts(p => p.map(pr => pr._id === editing ? data : pr));
+    } else {
+      const { data } = await createProduct(formData);
+      setProducts(p => [data, ...p]);
+    }
+    resetForm();
+  } catch (err) {
+    setApiError(err.response?.data?.message || 'Failed to save product.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleDelete = async () => {
     try {
-      // await deleteProduct(deleteId);
+      await deleteProduct(deleteId);
       setProducts(p => p.filter(pr => pr._id !== deleteId));
-    } catch (err) { console.error(err); }
-    finally { setDeleteId(null); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to delete product.');
+    } finally {
+      setDeleteId(null);
+    }
   };
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading products…</p>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -157,6 +198,12 @@ export default function ProductAdmin() {
               {!showForm && <button className="btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>+ Add Product</button>}
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '28px' }}>Manage your product catalogue</p>
+
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Product form */}
             {showForm && (
@@ -186,13 +233,13 @@ export default function ProductAdmin() {
                     </div>
 
                     <div>
-                      <label className="field-label">Price ($)</label>
+                      <label className="field-label">Price (LKR)</label>
                       <input className={`field-input${errors.price ? ' has-error':''}`} name="price" type="number" min="0" step="0.01" value={form.price} onChange={handleChange} onBlur={handleBlur} placeholder="0.00" />
                       {errors.price && <p className="field-error">{errors.price}</p>}
                     </div>
 
                     <div>
-                      <label className="field-label">Discount Price ($) <span style={{ textTransform:'none',letterSpacing:0,color:'var(--muted)' }}>(optional)</span></label>
+                      <label className="field-label">Discount Price (LKR) <span style={{ textTransform:'none',letterSpacing:0,color:'var(--muted)' }}>(optional)</span></label>
                       <input className={`field-input${errors.discountPrice ? ' has-error':''}`} name="discountPrice" type="number" min="0" step="0.01" value={form.discountPrice} onChange={handleChange} onBlur={handleBlur} placeholder="0.00" />
                       {errors.discountPrice && <p className="field-error">{errors.discountPrice}</p>}
                     </div>
@@ -202,7 +249,7 @@ export default function ProductAdmin() {
                       <select className={`field-input${errors.category ? ' has-error':''}`} name="category" value={form.category} onChange={handleChange} onBlur={handleBlur}
                         style={{ appearance:'none', background:'#fff url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%237A7A7A\' stroke-width=\'2\'%3E%3Cpath d=\'M6 9l6 6 6-6\'/%3E%3C/svg%3E") no-repeat right 12px center' }}>
                         <option value="">Select category</option>
-                        {MOCK_CATS.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                        {cats.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                       </select>
                       {errors.category && <p className="field-error">{errors.category}</p>}
                     </div>
@@ -282,8 +329,8 @@ export default function ProductAdmin() {
                   </div>
                   <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>{prod.category?.name}</span>
                   <div>
-                    <p style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 600 }}>${prod.price.toFixed(2)}</p>
-                    {prod.discountPrice && <p style={{ fontSize: '0.7rem', color: 'var(--maroon)' }}>${prod.discountPrice.toFixed(2)}</p>}
+                    <p style={{ fontFamily: "'Cormorant Garamond',serif", fontWeight: 600 }}>LKR {prod.price.toFixed(2)}</p>
+                    {prod.discountPrice && <p style={{ fontSize: '0.7rem', color: 'var(--maroon)' }}>LKR {prod.discountPrice.toFixed(2)}</p>}
                   </div>
                   <span style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>{prod.numReviews}</span>
                   <span style={{ fontSize: '0.68rem', fontWeight: 500, padding: '3px 10px', borderRadius: '99px', background: prod.isActive ? 'rgba(56,161,105,.1)' : 'rgba(113,128,150,.1)', color: prod.isActive ? '#276749' : '#4A5568' }}>

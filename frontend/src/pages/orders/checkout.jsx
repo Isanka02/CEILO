@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import { createOrder } from '../../api/orderApi';
-import { useCart } from '../../context/CartContext';
+import { useCart } from '../../context/useCart';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap');
@@ -25,10 +25,6 @@ const STYLES = `
   .btn-maroon:hover:not(:disabled) { background:var(--maroon-soft); }
   .btn-maroon:disabled { opacity:.55;cursor:not-allowed; }
 
-  .order-item { display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border); }
-  .order-item:last-child { border-bottom:none; }
-  .item-img { width:64px;height:80px;object-fit:cover;border-radius:2px;background:#F0EAE5;flex-shrink:0; }
-
   .summary-row { display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:0.82rem; }
   .summary-total { display:flex;justify-content:space-between;align-items:center;padding:14px 0 0;border-top:1px solid var(--border);margin-top:6px; }
 
@@ -38,27 +34,67 @@ const STYLES = `
   .success-overlay { position:fixed;inset:0;background:rgba(26,8,16,.6);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px; }
   .success-card { background:#fff;border-radius:6px;padding:48px 40px;max-width:440px;width:100%;text-align:center; }
   .success-icon { width:56px;height:56px;border-radius:50%;background:rgba(107,27,42,.08);display:flex;align-items:center;justify-content:center;margin:0 auto 20px; }
+
+  .item-row { display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border);transition:opacity .2s; }
+  .item-row:last-child { border-bottom:none; }
+  .item-row.deselected { opacity:0.4; }
 `;
 
-// ─── Mock cart data — replace with real CartContext ──────────────────────────
-const CART_ITEMS = [
-  { _id:'p1', name:'Silk Draped Blouse',  image:'', price:69,  quantity:1, color:'Ivory',  size:'M'  },
-  { _id:'p4', name:'Pearl Drop Necklace', image:'', price:64,  quantity:1, color:null,     size:null },
-  { _id:'p5', name:'Cashmere Wrap Scarf', image:'', price:120, quantity:2, color:'Camel',  size:null },
-];
-
 const DELIVERY_OPTIONS = [
-  { id:'standard', label:'Standard Delivery', sub:'5–7 business days', price:0    },
-  { id:'express',  label:'Express Delivery',  sub:'2–3 business days', price:12   },
+  { id: 'standard', label: 'Standard Delivery', sub: '5–7 business days', price: 0  },
+  { id: 'express',  label: 'Express Delivery',  sub: '2–3 business days', price: 12 },
 ];
 
 const PROVINCES = ['Western','Central','Southern','Northern','Eastern','North Western','North Central','Uva','Sabaragamuwa'];
 
+const itemKey = (i) => `${i._id}__${i.color || ''}__${i.size || ''}`;
+
+// ─── Field is defined at MODULE level — never recreated on re-render ──────────
+// Root cause of the focus bug: defining a component inside another component
+// makes React see a *new* component type on every render, so it unmounts and
+// remounts the input, stealing focus after each keystroke.
+// Moving it here (outside Checkout) fixes that permanently.
+const Field = ({ label, name, type = 'text', placeholder, as, form, errors, onChange }) => (
+  <div>
+    <label className="checkout-label">{label}</label>
+    {as === 'select' ? (
+      <select
+        className={`checkout-input${errors[name] ? ' error' : ''}`}
+        value={form[name]}
+        onChange={e => onChange(name, e.target.value)}
+        style={{
+          appearance: 'none',
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%237A7A7A\' stroke-width=\'2\'%3E%3Cpath d=\'M6 9l6 6 6-6\'/%3E%3C/svg%3E")',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'right 12px center',
+          backgroundSize: '12px',
+        }}
+      >
+        {PROVINCES.map(p => <option key={p}>{p}</option>)}
+      </select>
+    ) : (
+      <input
+        type={type}
+        className={`checkout-input${errors[name] ? ' error' : ''}`}
+        placeholder={placeholder}
+        value={form[name]}
+        onChange={e => onChange(name, e.target.value)}
+      />
+    )}
+    {errors[name] && (
+      <p style={{ fontSize: '0.68rem', color: '#C0392B', marginTop: '4px' }}>{errors[name]}</p>
+    )}
+  </div>
+);
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function Checkout() {
   const navigate = useNavigate();
+  const { cartItems: CART_ITEMS = [], clearCart } = useCart();
+
   const [form, setForm] = useState({
-    firstName:'', lastName:'', email:'', phone:'',
-    street:'', city:'', state:'', zip:'', country:'Sri Lanka',
+    firstName: '', lastName: '', email: '', phone: '',
+    street: '', city: '', state: PROVINCES[0], zip: '', country: 'Sri Lanka',
     saveAddress: false,
   });
   const [delivery, setDelivery] = useState('standard');
@@ -67,11 +103,29 @@ export default function Checkout() {
   const [success, setSuccess]   = useState(false);
   const [orderId, setOrderId]   = useState('');
 
-  const shippingPrice = DELIVERY_OPTIONS.find(d => d.id === delivery)?.price ?? 0;
-  const subtotal      = CART_ITEMS.reduce((s, i) => s + i.price * i.quantity, 0);
-  const total         = subtotal + shippingPrice;
+  const [selectedKeys, setSelectedKeys] = useState(
+    () => new Set(CART_ITEMS.map(itemKey))
+  );
 
-  const set = (k, v) => { setForm(f => ({ ...f, [k]:v })); setErrors(e => ({ ...e, [k]:'' })); };
+  const handleFieldChange = (name, value) => {
+    setForm(f => ({ ...f, [name]: value }));
+    setErrors(e => ({ ...e, [name]: '' }));
+  };
+
+  const toggleItem = (item) => {
+    const key = itemKey(item);
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const selectedItems = CART_ITEMS.filter(i => selectedKeys.has(itemKey(i)));
+
+  const shippingPrice = DELIVERY_OPTIONS.find(d => d.id === delivery)?.price ?? 0;
+  const subtotal      = selectedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const total         = subtotal + shippingPrice;
 
   const validate = () => {
     const e = {};
@@ -87,86 +141,85 @@ export default function Checkout() {
   };
 
   const handleSubmit = async () => {
+    if (selectedItems.length === 0) {
+      alert('Please select at least one item to check out.');
+      return;
+    }
     if (!validate()) return;
     setLoading(true);
     try {
-      // TODO: replace with real API call
-      // const order = await createOrder({ items, shippingAddress, deliveryMethod, shippingPrice, totalPrice });
-      await new Promise(r => setTimeout(r, 1400)); // mock delay
-      const mockId = 'ORD-' + Math.random().toString(36).slice(2,8).toUpperCase();
-      setOrderId(mockId);
+      const payload = {
+        items: selectedItems.map(i => ({
+          product:  i._id,
+          name:     i.name,
+          image:    i.image    || '',
+          price:    i.price,
+          quantity: i.quantity,
+          color:    i.color    || undefined,
+          size:     i.size     || undefined,
+        })),
+        shippingAddress: {
+          street:  form.street,
+          city:    form.city,
+          state:   form.state,
+          zip:     form.zip,
+          country: form.country,
+        },
+        deliveryMethod: delivery,
+        shippingPrice,
+        totalPrice: total,
+      };
+      const { data } = await createOrder(payload);
+      clearCart();
+      setOrderId(data._id);
       setSuccess(true);
     } catch (err) {
-      alert('Something went wrong. Please try again.');
+      alert(err.response?.data?.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const Field = ({ label, name, type='text', half, placeholder, as }) => (
-    <div className={half ? '' : ''}>
-      <label className="checkout-label">{label}</label>
-      {as === 'select' ? (
-        <select
-          className={`checkout-input${errors[name] ? ' error' : ''}`}
-          value={form[name]} onChange={e => set(name, e.target.value)}
-          style={{ appearance:'none', backgroundImage:'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%237A7A7A\' stroke-width=\'2\'%3E%3Cpath d=\'M6 9l6 6 6-6\'/%3E%3C/svg%3E")', backgroundRepeat:'no-repeat', backgroundPosition:'right 12px center', backgroundSize:'12px' }}
-        >
-          {PROVINCES.map(p => <option key={p}>{p}</option>)}
-        </select>
-      ) : (
-        <input
-          type={type}
-          className={`checkout-input${errors[name] ? ' error' : ''}`}
-          placeholder={placeholder}
-          value={form[name]}
-          onChange={e => set(name, e.target.value)}
-        />
-      )}
-      {errors[name] && <p style={{ fontSize:'0.68rem',color:'#C0392B',marginTop:'4px' }}>{errors[name]}</p>}
-    </div>
-  );
-
   return (
     <>
       <style>{STYLES}</style>
       <Header />
-      <div style={{ background:'var(--cream)', minHeight:'100vh', fontFamily:"'Jost',sans-serif", paddingBottom:'64px' }}>
+      <div style={{ background: 'var(--cream)', minHeight: '100vh', fontFamily: "'Jost',sans-serif", paddingBottom: '64px' }}>
 
-        {/* ── Page header ── */}
-        <div style={{ borderBottom:'1px solid var(--border)', background:'#fff', padding:'20px 6%' }}>
-          <div className="flex items-center gap-2" style={{ fontSize:'0.7rem', color:'var(--muted)', letterSpacing:'0.08em' }}>
-            <Link to="/products" style={{ color:'var(--muted)', textDecoration:'none' }}>Shop</Link>
+        {/* Page header */}
+        <div style={{ borderBottom: '1px solid var(--border)', background: '#fff', padding: '20px 6%' }}>
+          <div className="flex items-center gap-2" style={{ fontSize: '0.7rem', color: 'var(--muted)', letterSpacing: '0.08em' }}>
+            <Link to="/products" style={{ color: 'var(--muted)', textDecoration: 'none' }}>Shop</Link>
             <span>/</span>
-            <Link to="/cart" style={{ color:'var(--muted)', textDecoration:'none' }}>Cart</Link>
+            <Link to="/cart" style={{ color: 'var(--muted)', textDecoration: 'none' }}>Cart</Link>
             <span>/</span>
-            <span style={{ color:'var(--charcoal)' }}>Checkout</span>
+            <span style={{ color: 'var(--charcoal)' }}>Checkout</span>
           </div>
         </div>
 
         <div className="max-w-6xl mx-auto px-6 py-10">
-          <h1 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(1.6rem,3vw,2.2rem)', fontWeight:600, color:'var(--charcoal)', marginBottom:'32px' }}>
+          <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 'clamp(1.6rem,3vw,2.2rem)', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '32px' }}>
             Checkout
           </h1>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-            {/* ── LEFT: Form ── */}
+            {/* LEFT: Form */}
             <div className="lg:col-span-2 step-fade">
 
               {/* Contact */}
               <div className="section-card">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="section-num">1</div>
-                  <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.15rem', fontWeight:600, color:'var(--charcoal)' }}>Contact Information</h2>
+                  <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 600, color: 'var(--charcoal)' }}>Contact Information</h2>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <Field label="First Name" name="firstName" placeholder="Jane" />
-                  <Field label="Last Name"  name="lastName"  placeholder="Smith" />
+                  <Field label="First Name" name="firstName" placeholder="Jane"  form={form} errors={errors} onChange={handleFieldChange} />
+                  <Field label="Last Name"  name="lastName"  placeholder="Smith" form={form} errors={errors} onChange={handleFieldChange} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Email Address" name="email" type="email" placeholder="jane@example.com" />
-                  <Field label="Phone Number"  name="phone" type="tel"   placeholder="+94 77 000 0000" />
+                  <Field label="Email Address" name="email" type="email" placeholder="jane@example.com" form={form} errors={errors} onChange={handleFieldChange} />
+                  <Field label="Phone Number"  name="phone" type="tel"   placeholder="+94 77 000 0000"  form={form} errors={errors} onChange={handleFieldChange} />
                 </div>
               </div>
 
@@ -174,22 +227,26 @@ export default function Checkout() {
               <div className="section-card">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="section-num">2</div>
-                  <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.15rem', fontWeight:600, color:'var(--charcoal)' }}>Shipping Address</h2>
+                  <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 600, color: 'var(--charcoal)' }}>Shipping Address</h2>
                 </div>
                 <div className="mb-4">
-                  <Field label="Street Address" name="street" placeholder="123 Main Street, Apt 4B" />
+                  <Field label="Street Address" name="street" placeholder="123 Main Street, Apt 4B" form={form} errors={errors} onChange={handleFieldChange} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <Field label="City"     name="city" placeholder="Colombo" />
-                  <Field label="Province" name="state" as="select" />
+                  <Field label="City"     name="city"  placeholder="Colombo" form={form} errors={errors} onChange={handleFieldChange} />
+                  <Field label="Province" name="state" as="select"           form={form} errors={errors} onChange={handleFieldChange} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-5">
-                  <Field label="Postal Code" name="zip"     placeholder="10001" />
-                  <Field label="Country"     name="country" placeholder="Sri Lanka" />
+                  <Field label="Postal Code" name="zip"     placeholder="10001"     form={form} errors={errors} onChange={handleFieldChange} />
+                  <Field label="Country"     name="country" placeholder="Sri Lanka" form={form} errors={errors} onChange={handleFieldChange} />
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize:'0.78rem', color:'var(--muted)' }}>
-                  <input type="checkbox" checked={form.saveAddress} onChange={e => set('saveAddress', e.target.checked)}
-                    style={{ accentColor:'var(--maroon)', width:'14px', height:'14px' }} />
+                <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.saveAddress}
+                    onChange={e => handleFieldChange('saveAddress', e.target.checked)}
+                    style={{ accentColor: 'var(--maroon)', width: '14px', height: '14px' }}
+                  />
                   Save this address to my account
                 </label>
               </div>
@@ -198,20 +255,26 @@ export default function Checkout() {
               <div className="section-card">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="section-num">3</div>
-                  <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.15rem', fontWeight:600, color:'var(--charcoal)' }}>Delivery Method</h2>
+                  <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 600, color: 'var(--charcoal)' }}>Delivery Method</h2>
                 </div>
                 <div className="flex flex-col gap-3">
                   {DELIVERY_OPTIONS.map(opt => (
                     <label key={opt.id} className="flex items-center gap-4 cursor-pointer"
-                      style={{ padding:'14px 18px', border:`1px solid ${delivery === opt.id ? 'var(--maroon)' : 'var(--border)'}`, borderRadius:'3px', background: delivery === opt.id ? 'rgba(107,27,42,.03)' : '#fff', transition:'all .2s' }}>
-                      <input type="radio" name="delivery" value={opt.id} checked={delivery === opt.id} onChange={() => setDelivery(opt.id)}
-                        style={{ accentColor:'var(--maroon)', width:'15px', height:'15px' }} />
+                      style={{ padding: '14px 18px', border: `1px solid ${delivery === opt.id ? 'var(--maroon)' : 'var(--border)'}`, borderRadius: '3px', background: delivery === opt.id ? 'rgba(107,27,42,.03)' : '#fff', transition: 'all .2s' }}>
+                      <input
+                        type="radio"
+                        name="delivery"
+                        value={opt.id}
+                        checked={delivery === opt.id}
+                        onChange={() => setDelivery(opt.id)}
+                        style={{ accentColor: 'var(--maroon)', width: '15px', height: '15px' }}
+                      />
                       <div className="flex-1">
-                        <p style={{ fontSize:'0.82rem', fontWeight:500, color:'var(--charcoal)', marginBottom:'2px' }}>{opt.label}</p>
-                        <p style={{ fontSize:'0.72rem', color:'var(--muted)' }}>{opt.sub}</p>
+                        <p style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--charcoal)', marginBottom: '2px' }}>{opt.label}</p>
+                        <p style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{opt.sub}</p>
                       </div>
-                      <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color: opt.price === 0 ? '#2D7A4F' : 'var(--charcoal)' }}>
-                        {opt.price === 0 ? 'Free' : `$${opt.price}`}
+                      <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '0.95rem', fontWeight: 600, color: opt.price === 0 ? '#2D7A4F' : 'var(--charcoal)' }}>
+                        {opt.price === 0 ? 'Free' : `LKR ${opt.price}`}
                       </span>
                     </label>
                   ))}
@@ -222,80 +285,105 @@ export default function Checkout() {
               <div className="section-card">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="section-num">4</div>
-                  <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.15rem', fontWeight:600, color:'var(--charcoal)' }}>Payment</h2>
+                  <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 600, color: 'var(--charcoal)' }}>Payment</h2>
                 </div>
                 <div className="cod-badge">
-                  <div style={{ width:'36px', height:'36px', borderRadius:'50%', background:'rgba(107,27,42,.1)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(107,27,42,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <svg width="16" height="16" fill="none" stroke="var(--maroon)" strokeWidth="1.8" viewBox="0 0 24 24">
                       <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>
                     </svg>
                   </div>
                   <div>
-                    <p style={{ fontSize:'0.82rem', fontWeight:500, color:'var(--charcoal)', marginBottom:'2px' }}>Cash on Delivery</p>
-                    <p style={{ fontSize:'0.72rem', color:'var(--muted)' }}>Pay in cash when your order arrives at your door.</p>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--charcoal)', marginBottom: '2px' }}>Cash on Delivery</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>Pay in cash when your order arrives at your door.</p>
                   </div>
                 </div>
               </div>
-
             </div>
 
-            {/* ── RIGHT: Order Summary ── */}
+            {/* RIGHT: Order Summary */}
             <div>
-              <div className="section-card" style={{ position:'sticky', top:'24px' }}>
-                <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.1rem', fontWeight:600, color:'var(--charcoal)', marginBottom:'20px' }}>
+              <div className="section-card" style={{ position: 'sticky', top: '24px' }}>
+                <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.1rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '4px' }}>
                   Order Summary
                 </h2>
+                <p style={{ fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '16px' }}>
+                  Select the items you want to order
+                </p>
 
-                {/* Items */}
-                <div style={{ marginBottom:'4px' }}>
-                  {CART_ITEMS.map(item => (
-                    <div key={item._id} className="order-item">
-                      {/* IMAGE: product thumbnail */}
-                      <div style={{ width:'64px', height:'80px', background:'#F0EAE5', borderRadius:'2px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        {item.image
-                          ? <img src={item.image} alt={item.name} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'2px' }} />
-                          : <svg width="20" height="20" fill="none" stroke="#D4C5C0" strokeWidth="1.2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                        }
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p style={{ fontSize:'0.82rem', fontWeight:500, color:'var(--charcoal)', marginBottom:'3px', lineHeight:1.3 }}>{item.name}</p>
-                        <p style={{ fontSize:'0.7rem', color:'var(--muted)', marginBottom:'6px' }}>
-                          {[item.color, item.size].filter(Boolean).join(' · ')}
-                          {item.quantity > 1 && ` · Qty ${item.quantity}`}
-                        </p>
-                        <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color:'var(--charcoal)' }}>
-                          ${item.price * item.quantity}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {CART_ITEMS.length === 0 ? (
+                  <p style={{ fontSize: '0.82rem', color: 'var(--muted)', padding: '12px 0' }}>Your cart is empty.</p>
+                ) : (
+                  <div style={{ marginBottom: '4px' }}>
+                    {CART_ITEMS.map(item => {
+                      const key = itemKey(item);
+                      const isSelected = selectedKeys.has(key);
+                      return (
+                        <div key={key} className={`item-row${isSelected ? '' : ' deselected'}`}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleItem(item)}
+                            style={{ accentColor: 'var(--maroon)', width: '15px', height: '15px', flexShrink: 0, marginTop: '4px', cursor: 'pointer' }}
+                          />
+                          <div style={{ width: '64px', height: '80px', background: '#F0EAE5', borderRadius: '2px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {item.image
+                              ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '2px' }} />
+                              : <svg width="20" height="20" fill="none" stroke="#D4C5C0" strokeWidth="1.2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--charcoal)', marginBottom: '3px', lineHeight: 1.3 }}>{item.name}</p>
+                            <p style={{ fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '6px' }}>
+                              {[item.color, item.size].filter(Boolean).join(' · ')}
+                              {item.quantity > 1 && ` · Qty ${item.quantity}`}
+                            </p>
+                            <p style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '0.95rem', fontWeight: 600, color: 'var(--charcoal)' }}>
+                              LKR {item.price * item.quantity}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-                {/* Totals */}
                 <div>
                   <div className="summary-row">
-                    <span style={{ color:'var(--muted)' }}>Subtotal</span>
-                    <span style={{ color:'var(--charcoal)' }}>${subtotal}</span>
+                    <span style={{ color: 'var(--muted)' }}>
+                      Subtotal ({selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''})
+                    </span>
+                    <span style={{ color: 'var(--charcoal)' }}>LKR {subtotal}</span>
                   </div>
                   <div className="summary-row">
-                    <span style={{ color:'var(--muted)' }}>Shipping</span>
+                    <span style={{ color: 'var(--muted)' }}>Shipping</span>
                     <span style={{ color: shippingPrice === 0 ? '#2D7A4F' : 'var(--charcoal)' }}>
-                      {shippingPrice === 0 ? 'Free' : `$${shippingPrice}`}
+                      {shippingPrice === 0 ? 'Free' : `LKR ${shippingPrice}`}
                     </span>
                   </div>
                   <div className="summary-total">
-                    <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1rem', fontWeight:600, color:'var(--charcoal)' }}>Total</span>
-                    <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.2rem', fontWeight:600, color:'var(--maroon)' }}>${total}</span>
+                    <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1rem', fontWeight: 600, color: 'var(--charcoal)' }}>Total</span>
+                    <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.2rem', fontWeight: 600, color: 'var(--maroon)' }}>LKR {total}</span>
                   </div>
                 </div>
 
-                <button className="btn-maroon mt-5" onClick={handleSubmit} disabled={loading}>
-                  {loading ? 'Placing Order…' : 'Place Order'}
+                <button
+                  className="btn-maroon mt-5"
+                  onClick={handleSubmit}
+                  disabled={loading || selectedItems.length === 0}
+                >
+                  {loading ? 'Placing Order…' : `Place Order (${selectedItems.length})`}
                 </button>
 
-                <p style={{ fontSize:'0.68rem', color:'var(--muted)', textAlign:'center', marginTop:'12px', lineHeight:1.6 }}>
+                {selectedItems.length === 0 && (
+                  <p style={{ fontSize: '0.68rem', color: '#C0392B', textAlign: 'center', marginTop: '8px' }}>
+                    Select at least one item to continue.
+                  </p>
+                )}
+
+                <p style={{ fontSize: '0.68rem', color: 'var(--muted)', textAlign: 'center', marginTop: '12px', lineHeight: 1.6 }}>
                   By placing your order you agree to our{' '}
-                  <a href="#" style={{ color:'var(--maroon)', textDecoration:'none' }}>Terms & Conditions</a>.
+                  <a href="#" style={{ color: 'var(--maroon)', textDecoration: 'none' }}>Terms & Conditions</a>.
                 </p>
               </div>
             </div>
@@ -304,7 +392,7 @@ export default function Checkout() {
         </div>
       </div>
 
-      {/* ── Success Modal ── */}
+      {/* Success Modal */}
       {success && (
         <div className="success-overlay">
           <div className="success-card">
@@ -313,20 +401,20 @@ export default function Checkout() {
                 <path d="M20 6L9 17l-5-5"/>
               </svg>
             </div>
-            <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.6rem', fontWeight:600, color:'var(--charcoal)', marginBottom:'8px' }}>
+            <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.6rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '8px' }}>
               Order Placed!
             </h2>
-            <p style={{ fontSize:'0.82rem', color:'var(--muted)', lineHeight:1.7, marginBottom:'6px' }}>
+            <p style={{ fontSize: '0.82rem', color: 'var(--muted)', lineHeight: 1.7, marginBottom: '6px' }}>
               Thank you for your order. We'll prepare it with care.
             </p>
-            <p style={{ fontSize:'0.75rem', color:'var(--maroon)', fontWeight:500, marginBottom:'28px', letterSpacing:'0.05em' }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--maroon)', fontWeight: 500, marginBottom: '28px', letterSpacing: '0.05em' }}>
               {orderId}
             </p>
             <div className="flex flex-col gap-3">
               <button className="btn-maroon" onClick={() => navigate(`/orders/${orderId}`)}>
                 View Order
               </button>
-              <Link to="/products" style={{ fontSize:'0.72rem', color:'var(--muted)', textDecoration:'none', textAlign:'center', letterSpacing:'0.08em', textTransform:'uppercase' }}>
+              <Link to="/products" style={{ fontSize: '0.72rem', color: 'var(--muted)', textDecoration: 'none', textAlign: 'center', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                 Continue Shopping
               </Link>
             </div>

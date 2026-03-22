@@ -22,8 +22,7 @@ export default function ResetPwd() {
     }
     setLoading(true);
     try {
-      // await resetPassword(token, { password: form.password });
-      console.log('Reset password with token:', token);
+      await resetPassword(token, { password: form.password });
       setDone(true);
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid or expired reset link.');

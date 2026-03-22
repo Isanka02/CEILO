@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getShopReviews, deleteShopReview } from '../../api/shopReviewApi';
+import { getShopReviews, deleteShopReview } from '../../api/shopReviewApi';
+import StarRating from '../../components/StarRating';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -13,48 +14,65 @@ const STYLES = `
   .action-btn { padding:5px 12px;border-radius:3px;font-family:'Jost',sans-serif;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;border:1px solid;transition:all .2s; }
 `;
 
-// TODO: replace with real data from getShopReviews() API
-const MOCK_REVIEWS = [
-  { _id:'r1', user:{ name:'Amara Silva',  avatar:'' }, rating:5, comment:'Absolutely love CEILO! The quality is unmatched and delivery was super fast.', createdAt:'2026-03-01' },
-  { _id:'r2', user:{ name:'Priya Mendis', avatar:'' }, rating:4, comment:'Great products and beautiful packaging. Will definitely shop again.', createdAt:'2026-02-20' },
-  { _id:'r3', user:{ name:'Kavya Perera', avatar:'' }, rating:5, comment:'The silk blouse is everything I dreamed of. CEILO never disappoints!', createdAt:'2026-02-15' },
-  { _id:'r4', user:{ name:'Riya Fernando',avatar:'' }, rating:3, comment:'Good quality but shipping took longer than expected.', createdAt:'2026-02-10' },
-];
-
-const StarRating = ({ rating, size = 14 }) => (
-  <div className="flex items-center gap-0.5">
-    {[1,2,3,4,5].map(i => (
-      <svg key={i} width={size} height={size} viewBox="0 0 24 24" fill={i <= rating ? '#6B1B2A' : 'none'} stroke={i <= rating ? '#6B1B2A' : '#C4B5B8'} strokeWidth="1.5">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-      </svg>
-    ))}
-  </div>
-);
-
-export default function shopReviewsAdmin() {
-  const [reviews, setReviews]   = useState(MOCK_REVIEWS);
+export default function ShopReviewsAdmin() {
+  const [reviews, setReviews]   = useState([]);
   const [deleteId, setDeleteId] = useState(null);
   const [filter, setFilter]     = useState('all');
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getShopReviews();
+        // ── FIX: API returns { reviews, total, averageRating } — extract the array
+        setReviews(data.reviews ?? data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load reviews.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const filtered = filter === 'all' ? reviews : reviews.filter(r => r.rating === Number(filter));
 
-  const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : '0.0';
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
+    : '0.0';
 
   const ratingCounts = [5,4,3,2,1].map(n => ({
-    n, count: reviews.filter(r => r.rating === n).length,
-    pct: reviews.length ? Math.round((reviews.filter(r => r.rating === n).length / reviews.length) * 100) : 0,
+    n,
+    count: reviews.filter(r => r.rating === n).length,
+    pct: reviews.length
+      ? Math.round((reviews.filter(r => r.rating === n).length / reviews.length) * 100)
+      : 0,
   }));
 
   const handleDelete = async () => {
     try {
-      // await deleteShopReview(deleteId);
+      await deleteShopReview(deleteId);
       setReviews(p => p.filter(r => r._id !== deleteId));
-    } catch (err) { console.error(err); }
-    finally { setDeleteId(null); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to delete review.');
+    } finally {
+      setDeleteId(null);
+    }
   };
 
-  const initials = name => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  // ── FIX: guard against undefined name
+  const initials = name => (name || '').split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2) || '?';
   const fmtDate  = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading reviews…</p>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -67,6 +85,12 @@ export default function shopReviewsAdmin() {
           <main className="flex-1 min-w-0">
             <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.7rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '4px' }}>Shop Reviews</h1>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '32px' }}>Customer reviews for your overall store</p>
+
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
@@ -123,13 +147,13 @@ export default function shopReviewsAdmin() {
                       <div className="flex items-center gap-3">
                         {/* IMAGE: user avatar 36×36px circular — falls back to initials */}
                         <div className="avatar-sm">
-                          {review.user.avatar
+                          {review.user?.avatar
                             ? <img src={review.user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                            : initials(review.user.name)
+                            : initials(review.user?.name)
                           }
                         </div>
                         <div>
-                          <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--charcoal)' }}>{review.user.name}</p>
+                          <p style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--charcoal)' }}>{review.user?.name || 'Anonymous'}</p>
                           <p style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>{fmtDate(review.createdAt)}</p>
                         </div>
                       </div>

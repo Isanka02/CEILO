@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
+import api from '../../api/axiosInstance';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=Jost:wght@300;400;500&display=swap');
@@ -36,27 +37,6 @@ const STYLES = `
   @keyframes slideUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)} }
 `;
 
-// ─── API ─────────────────────────────────────────────────────────────────────
-const fetchShopReviews = async () => {
-  const res = await fetch('/api/shop-reviews');
-  if (!res.ok) throw new Error('Failed to fetch reviews');
-  return res.json(); // { reviews, total, averageRating }
-};
-
-const submitReview = async ({ rating, comment }) => {
-  const res = await fetch('/api/shop-reviews', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token')}`,
-    },
-    body: JSON.stringify({ rating, comment }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Failed to submit review');
-  return data;
-};
-
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const RATING_LABELS = { 1:'Poor', 2:'Fair', 3:'Good', 4:'Great', 5:'Excellent' };
 
@@ -72,8 +52,9 @@ const StarDisplay = ({ rating, size = 14 }) => (
   </div>
 );
 
+// ── FIX: guard against undefined name ────────────────────────────────────────
 const initials = (name = '') =>
-  name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  (name || '').split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
 
 const timeAgo = (dateStr) => {
   const days = Math.floor((Date.now() - new Date(dateStr)) / 86400000);
@@ -99,14 +80,15 @@ export default function ShopReviews() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]           = useState('');
 
-  // TODO: replace with real auth context
-  const user = null; // e.g. from useAuth()
+  // Read auth from localStorage
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
 
+  // ── FIX: use axiosInstance so baseURL + auth header are handled automatically
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const res = await fetchShopReviews();
+        const { data: res } = await api.get('/shop-reviews');
         setData(res);
       } catch {
         setError('Could not load reviews. Please try again.');
@@ -115,6 +97,32 @@ export default function ShopReviews() {
       }
     })();
   }, []);
+
+  const handleSubmit = async () => {
+    if (rating === 0)               return setFormError('Please select a star rating.');
+    if (comment.trim().length < 10) return setFormError('Comment must be at least 10 characters.');
+    setFormError('');
+    setSubmitting(true);
+    try {
+      const { data: newReview } = await api.post('/shop-reviews', { rating, comment: comment.trim() });
+      setData(prev => {
+        const without = prev.reviews.filter(r => r.user?._id !== newReview.user?._id);
+        return {
+          ...prev,
+          reviews: [newReview, ...without],
+          total: without.length < prev.reviews.length ? prev.total : prev.total + 1,
+        };
+      });
+      setRating(0);
+      setComment('');
+      setToast('Your review has been submitted. Thank you!');
+      setTimeout(() => setToast(''), 3500);
+    } catch (err) {
+      setFormError(err.response?.data?.message || err.message || 'Failed to submit review.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const breakdown = [5,4,3,2,1].map(star => {
     const count = data.reviews.filter(r => r.rating === star).length;
@@ -125,29 +133,6 @@ export default function ShopReviews() {
   const filtered = filterStar === 0
     ? data.reviews
     : data.reviews.filter(r => r.rating === filterStar);
-
-  const handleSubmit = async () => {
-    if (rating === 0)               return setFormError('Please select a star rating.');
-    if (comment.trim().length < 10) return setFormError('Comment must be at least 10 characters.');
-    setFormError('');
-    setSubmitting(true);
-    try {
-      const newReview = await submitReview({ rating, comment: comment.trim() });
-      // Replace existing review by same user (upsert) or prepend new one
-      setData(prev => {
-        const without = prev.reviews.filter(r => r.user?._id !== newReview.user?._id);
-        return { ...prev, reviews: [newReview, ...without], total: without.length < prev.reviews.length ? prev.total : prev.total + 1 };
-      });
-      setRating(0);
-      setComment('');
-      setToast('Your review has been submitted. Thank you!');
-      setTimeout(() => setToast(''), 3500);
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <>
@@ -348,7 +333,7 @@ export default function ShopReviews() {
                       <div className="flex items-start gap-3 mb-3">
                         <div className="avatar">
                           {review.user?.avatar
-                            ? <img src={review.user.avatar} alt={review.user.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                            ? <img src={review.user.avatar} alt={review.user?.name || ''} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                             : initials(review.user?.name)
                           }
                         </div>
@@ -389,11 +374,3 @@ export default function ShopReviews() {
     </>
   );
 }
-
-
-
-
-
-
-
-

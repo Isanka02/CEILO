@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { sendNotification } from '../../api/adminApi';
+import { sendNotification } from '../../api/adminApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -29,12 +29,6 @@ const validate = f => {
   return e;
 };
 
-// TODO: replace with real sent history from API
-const MOCK_HISTORY = [
-  { _id:'n1', title:'Spring Collection is Live!', message:'Discover our new spring arrivals.', type:'promo',  sentAt:'2026-03-01', audience:'All Users' },
-  { _id:'n2', title:'Shipping Delay Notice',       message:'Some orders may experience delays.', type:'info', sentAt:'2026-02-20', audience:'All Users' },
-];
-
 const TYPE_COLORS = {
   order: { bg:'rgba(49,130,206,.1)', color:'#2B6CB0' },
   promo: { bg:'rgba(107,27,42,.1)', color:'#6B1B2A' },
@@ -47,7 +41,8 @@ export default function SendNotificationAdmin() {
   const [touched, setTouched]   = useState({});
   const [loading, setLoading]   = useState(false);
   const [success, setSuccess]   = useState('');
-  const [history, setHistory]   = useState(MOCK_HISTORY);
+  const [history, setHistory]   = useState([]);
+  const [apiError, setApiError] = useState('');
   const [audience, setAudience] = useState('all'); // 'all' | 'specific'
 
   const handleChange = e => {
@@ -80,15 +75,25 @@ export default function SendNotificationAdmin() {
         type:    form.type,
         ...(audience === 'specific' && form.userId ? { userId: form.userId } : {}),
       };
-      // await sendNotification(payload);
-      console.log('Send notification:', payload);
-      setHistory(p => [{ _id: Date.now().toString(), ...form, sentAt: new Date().toISOString().slice(0,10), audience: audience === 'all' ? 'All Users' : `User: ${form.userId}` }, ...p]);
+      await sendNotification(payload);
+      // Add to local history so admin sees sent record immediately
+      setHistory(p => [{
+        _id:      Date.now().toString(),
+        title:    form.title,
+        message:  form.message,
+        type:     form.type,
+        sentAt:   new Date().toISOString().slice(0, 10),
+        audience: audience === 'all' ? 'All Users' : `User: ${form.userId}`,
+      }, ...p]);
       setForm({ title: '', message: '', type: 'info', userId: '' });
       setErrors({}); setTouched({});
       setSuccess('Notification sent successfully!');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to send notification.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -112,6 +117,12 @@ export default function SendNotificationAdmin() {
                   <div className="mb-5 px-4 py-3 rounded-sm flex items-center gap-2 text-sm" style={{ background: 'rgba(56,161,105,.1)', color: '#276749', border: '1px solid rgba(56,161,105,.25)' }}>
                     <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                     {success}
+                  </div>
+                )}
+
+                {apiError && (
+                  <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                    {apiError}
                   </div>
                 )}
 

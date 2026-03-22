@@ -1,140 +1,186 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
-import Sidebar from '../../components/layout/Sidebar';
-// import { getMyOrders } from '../../api/orderApi';
+import { getMyOrders } from '../../api/orderApi';
 
 const STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Jost:wght@300;400;500&display=swap');
   :root { --maroon:#6B1B2A;--maroon-dark:#4A1019;--maroon-soft:#8B2535;--cream:#FAF7F4;--charcoal:#1C1C1E;--muted:#7A7A7A;--border:#E8E0D8; }
-  .order-row { background:#fff;border:1px solid var(--border);border-radius:4px;padding:20px 24px;transition:border-color .2s,box-shadow .2s;display:flex;flex-wrap:wrap;align-items:center;gap:16px; }
-  .order-row:hover { border-color:#C4A8A8;box-shadow:0 2px 12px rgba(107,27,42,.06); }
-  .status-badge { display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:500; }
-  .btn-outline { padding:7px 18px;background:transparent;color:var(--maroon);border:1px solid var(--maroon);border-radius:3px;font-family:'Jost',sans-serif;font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:all .2s;text-decoration:none;display:inline-block; }
-  .btn-outline:hover { background:var(--maroon);color:#fff; }
+
+  .order-card { background:#fff;border:1px solid var(--border);border-radius:4px;overflow:hidden;transition:border-color .2s,box-shadow .2s; }
+  .order-card:hover { border-color:#C4A8A8;box-shadow:0 4px 20px rgba(107,27,42,.07); }
+
+  .status-badge { display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:0.62rem;font-weight:500;letter-spacing:0.08em;text-transform:uppercase; }
+  .status-pending    { background:#FEF3C7;color:#92400E; }
+  .status-processing { background:#DBEAFE;color:#1E40AF; }
+  .status-shipped    { background:rgba(107,27,42,.1);color:var(--maroon); }
+  .status-delivered  { background:#D1FAE5;color:#065F46; }
+  .status-canceled   { background:#F3F4F6;color:#6B7280; }
+
+  .tab-btn { padding:8px 18px;font-family:'Jost',sans-serif;font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;background:none;border:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s; }
+  .tab-btn.active { color:var(--maroon);border-bottom-color:var(--maroon); }
+
+  .empty-state { border:1px dashed var(--border);border-radius:4px;padding:64px 24px;text-align:center; }
+  .btn-maroon { display:inline-block;padding:11px 28px;background:var(--maroon);color:#fff;border-radius:3px;font-family:'Jost',sans-serif;font-size:0.72rem;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;transition:background .2s; }
+  .btn-maroon:hover { background:var(--maroon-soft); }
 `;
 
-const STATUS_STYLES = {
-  pending:    { bg: 'rgba(221,107,32,.1)',  color: '#C05621', dot: '#DD6B20' },
-  processing: { bg: 'rgba(49,130,206,.1)',  color: '#2B6CB0', dot: '#3182CE' },
-  shipped:    { bg: 'rgba(107,27,42,.1)',   color: '#6B1B2A', dot: '#6B1B2A' },
-  delivered:  { bg: 'rgba(56,161,105,.1)', color: '#276749', dot: '#38A169' },
-  canceled:   { bg: 'rgba(113,128,150,.1)',color: '#4A5568', dot: '#718096' },
-};
+const TABS = ['All','Pending','Processing','Shipped','Delivered','Canceled'];
 
-// TODO: replace with real orders from API
-const MOCK_ORDERS = [
-  { _id: 'ORD001', createdAt: '2026-02-14', totalPrice: 128.00, orderStatus: 'delivered', paymentStatus: 'paid',    items: [{ name: 'Silk Blouse', quantity: 1, image: '' }, { name: 'Leather Belt', quantity: 1, image: '' }] },
-  { _id: 'ORD002', createdAt: '2026-02-28', totalPrice:  64.50, orderStatus: 'shipped',   paymentStatus: 'pending', items: [{ name: 'Gold Earrings', quantity: 2, image: '' }] },
-  { _id: 'ORD003', createdAt: '2026-03-04', totalPrice:  89.00, orderStatus: 'pending',   paymentStatus: 'pending', items: [{ name: 'Maroon Handbag', quantity: 1, image: '' }] },
-];
+const statusLabel = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 export default function MyOrders() {
-  const [orders] = useState(MOCK_ORDERS);
-  const [filter, setFilter] = useState('all');
+  const [orders, setOrders]   = useState([]);
+  const [tab, setTab]         = useState('All');
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
 
-  const filtered = filter === 'all' ? orders : orders.filter(o => o.orderStatus === filter);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getMyOrders();
+        setOrders(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load orders. Please refresh.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
-  const fmtDate  = d => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  const fmtPrice = p => `$${p.toFixed(2)}`;
+  const filtered = tab === 'All'
+    ? orders
+    : orders.filter(o => o.orderStatus === tab.toLowerCase());
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading orders…</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
       <style>{STYLES}</style>
       <Header />
-      <div className="min-h-screen" style={{ background: 'var(--cream)', fontFamily: "'Jost',sans-serif" }}>
-        <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row gap-10">
-          <Sidebar variant="user" />
+      <div style={{ background:'var(--cream)', minHeight:'100vh', fontFamily:"'Jost',sans-serif", paddingBottom:'64px' }}>
+        {apiError && (
+          <div style={{ background:'rgba(197,48,48,.08)', color:'#C53030', border:'1px solid rgba(197,48,48,.2)', padding:'12px 6%', fontSize:'0.82rem' }}>
+            {apiError}
+          </div>
+        )}
 
-          <main className="flex-1 min-w-0">
-            <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.7rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '4px' }}>My Orders</h1>
-            <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '28px' }}>Track and manage your purchases</p>
+        {/* Page header */}
+        <div style={{ borderBottom:'1px solid var(--border)', background:'#fff', padding:'20px 6%' }}>
+          <div className="flex items-center gap-2" style={{ fontSize:'0.7rem', color:'var(--muted)', letterSpacing:'0.08em' }}>
+            <Link to="/" style={{ color:'var(--muted)', textDecoration:'none' }}>Home</Link>
+            <span>/</span>
+            <span style={{ color:'var(--charcoal)' }}>My Orders</span>
+          </div>
+        </div>
 
-            {/* Filter tabs */}
-            <div className="flex items-center gap-1 mb-6 flex-wrap">
-              {['all','pending','processing','shipped','delivered','canceled'].map(s => (
-                <button key={s} onClick={() => setFilter(s)}
-                  style={{
-                    padding: '6px 16px', borderRadius: '99px', border: 'none', cursor: 'pointer',
-                    fontFamily: "'Jost',sans-serif", fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase',
-                    background: filter === s ? 'var(--maroon)' : '#fff',
-                    color: filter === s ? '#fff' : 'var(--muted)',
-                    border: `1px solid ${filter === s ? 'var(--maroon)' : 'var(--border)'}`,
-                    transition: 'all .2s',
-                  }}>
-                  {s}
-                </button>
-              ))}
+        <div className="max-w-4xl mx-auto px-6 py-10">
+          <h1 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'clamp(1.6rem,3vw,2.2rem)', fontWeight:600, color:'var(--charcoal)', marginBottom:'28px' }}>
+            My Orders
+          </h1>
+
+          {/* Tabs */}
+          <div style={{ display:'flex', gap:'4px', borderBottom:'1px solid var(--border)', marginBottom:'28px', overflowX:'auto' }}>
+            {TABS.map(t => (
+              <button key={t} className={`tab-btn${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+                {t}
+                {t !== 'All' && (
+                  <span style={{ marginLeft:'6px', fontSize:'0.6rem', background: tab === t ? 'var(--maroon)' : 'var(--border)', color: tab === t ? '#fff' : 'var(--muted)', borderRadius:'99px', padding:'1px 6px' }}>
+                    {orders.filter(o => o.orderStatus === t.toLowerCase()).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Orders list */}
+          {filtered.length === 0 ? (
+            <div className="empty-state">
+              <svg width="36" height="36" fill="none" stroke="#D4C5C0" strokeWidth="1.2" viewBox="0 0 24 24" style={{ margin:'0 auto 14px', display:'block' }}>
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+              </svg>
+              <p style={{ fontSize:'0.85rem', color:'var(--muted)', marginBottom:'20px' }}>No {tab.toLowerCase()} orders found.</p>
+              <Link to="/products" className="btn-maroon">Start Shopping</Link>
             </div>
-
-            {/* Orders list */}
-            {filtered.length === 0 ? (
-              <div className="text-center py-16" style={{ border: '1px dashed var(--border)', borderRadius: '4px' }}>
-                <svg width="36" height="36" fill="none" stroke="#C4B5B8" strokeWidth="1.5" viewBox="0 0 24 24" style={{ margin: '0 auto 12px' }}>
-                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/>
-                </svg>
-                <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>No orders found.</p>
-                <Link to="/products" className="btn-outline mt-4" style={{ display: 'inline-block' }}>Start Shopping</Link>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {filtered.map(order => {
-                  const st = STATUS_STYLES[order.orderStatus] || STATUS_STYLES.pending;
-                  return (
-                    <div key={order._id} className="order-row">
-
-                      {/* Order items thumbnails */}
-                      <div className="flex -space-x-2">
-                        {order.items.slice(0, 3).map((item, i) => (
-                          <div key={i} style={{ width: '44px', height: '44px', borderRadius: '4px', border: '2px solid #fff', background: '#F0EAE5', overflow: 'hidden', flexShrink: 0 }}>
-                            {/* IMAGE: product thumbnail — 44×44px */}
-                            {item.image
-                              ? <img src={item.image} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  <svg width="16" height="16" fill="none" stroke="#C4B5B8" strokeWidth="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-                                </div>
-                            }
-                          </div>
-                        ))}
-                        {order.items.length > 3 && (
-                          <div style={{ width: '44px', height: '44px', borderRadius: '4px', border: '2px solid #fff', background: '#F0EAE5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <span style={{ fontSize: '0.68rem', color: 'var(--muted)' }}>+{order.items.length - 3}</span>
-                          </div>
-                        )}
+          ) : (
+            <div className="flex flex-col gap-4">
+              {filtered.map(order => (
+                <div key={order._id} className="order-card">
+                  {/* Card header */}
+                  <div className="flex items-center justify-between flex-wrap gap-3"
+                    style={{ padding:'16px 20px', borderBottom:'1px solid var(--border)', background:'#FDFAF8' }}>
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div>
+                        <p style={{ fontSize:'0.65rem', color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'2px' }}>Order</p>
+                        <p style={{ fontSize:'0.82rem', fontWeight:500, color:'var(--charcoal)' }}>{order._id}</p>
                       </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap mb-1">
-                          <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--charcoal)' }}>#{order._id}</span>
-                          <span className="status-badge" style={{ background: st.bg, color: st.color }}>
-                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
-                            {order.orderStatus}
-                          </span>
-                          {order.paymentStatus === 'paid' && (
-                            <span className="status-badge" style={{ background: 'rgba(56,161,105,.1)', color: '#276749' }}>
-                              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#38A169', display: 'inline-block' }} />
-                              Paid
-                            </span>
-                          )}
-                        </div>
-                        <p style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-                          {order.items.map(i => i.name).join(', ')} · {fmtDate(order.createdAt)}
+                      <div>
+                        <p style={{ fontSize:'0.65rem', color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'2px' }}>Date</p>
+                        <p style={{ fontSize:'0.82rem', color:'var(--charcoal)' }}>
+                          {new Date(order.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                         </p>
                       </div>
-
-                      {/* Price + action */}
-                      <div className="flex items-center gap-4 shrink-0">
-                        <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--charcoal)', fontFamily: "'Cormorant Garamond',serif" }}>{fmtPrice(order.totalPrice)}</span>
-                        <Link to={`/profile/orders/${order._id}`} className="btn-outline">View</Link>
+                      <div>
+                        <p style={{ fontSize:'0.65rem', color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'2px' }}>Total</p>
+                        <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color:'var(--charcoal)' }}>LKR {order.totalPrice}</p>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </main>
+                    <div className="flex items-center gap-3">
+                      <span className={`status-badge status-${order.orderStatus}`}>
+                        <span style={{ width:'4px', height:'4px', borderRadius:'50%', background:'currentColor', display:'inline-block' }} />
+                        {statusLabel(order.orderStatus)}
+                      </span>
+                      <span style={{ fontSize:'0.68rem', padding:'3px 10px', borderRadius:'99px', background: order.paymentStatus === 'paid' ? '#D1FAE5' : '#FEF3C7', color: order.paymentStatus === 'paid' ? '#065F46' : '#92400E' }}>
+                        {order.paymentStatus === 'paid' ? 'Paid' : 'COD'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Items preview */}
+                  <div className="flex items-center gap-3 flex-wrap" style={{ padding:'16px 20px' }}>
+                    <div className="flex gap-2 flex-1">
+                      {order.items.slice(0, 3).map((item, i) => (
+                        <div key={i} style={{ width:'48px', height:'60px', background:'#F0EAE5', borderRadius:'2px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
+                          {item.image
+                            ? <img src={item.image} alt={item.name} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'2px' }} />
+                            : <svg width="16" height="16" fill="none" stroke="#D4C5C0" strokeWidth="1.2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                          }
+                          {i === 2 && order.items.length > 3 && (
+                            <div style={{ position:'absolute', inset:0, background:'rgba(26,8,16,.45)', borderRadius:'2px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                              <span style={{ fontSize:'0.65rem', color:'#fff', fontWeight:500 }}>+{order.items.length - 3}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{ paddingLeft:'8px' }}>
+                        <p style={{ fontSize:'0.82rem', fontWeight:500, color:'var(--charcoal)', marginBottom:'2px' }}>{order.items[0].name}</p>
+                        {order.items.length > 1 && (
+                          <p style={{ fontSize:'0.72rem', color:'var(--muted)' }}>+{order.items.length - 1} more item{order.items.length > 2 ? 's' : ''}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Link to={`/orders/${order._id}`}
+                      style={{ fontSize:'0.68rem', color:'var(--maroon)', textDecoration:'none', letterSpacing:'0.1em', textTransform:'uppercase', border:'1px solid var(--maroon)', padding:'8px 18px', borderRadius:'3px', whiteSpace:'nowrap', transition:'all .2s' }}
+                      onMouseEnter={e => { e.target.style.background='var(--maroon)'; e.target.style.color='#fff'; }}
+                      onMouseLeave={e => { e.target.style.background='transparent'; e.target.style.color='var(--maroon)'; }}
+                    >
+                      View Details
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <Footer />

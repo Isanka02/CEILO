@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { getProducts } from '../../api/productApi';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
+import Sidebar from '../../components/layout/Sidebar';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=Jost:wght@300;400;500&display=swap');
@@ -94,12 +96,7 @@ const SLIDES = [
   },
 ];
 
-const FEATURED = [
-  { _id:'p1', name:'Silk Draped Blouse',  slug:'silk-draped-blouse',  price:89,  discountPrice:69,  images:[''], category:{ name:'Tops'    } },
-  { _id:'p2', name:'Maroon Leather Tote', slug:'maroon-leather-tote', price:145, discountPrice:null, images:[''], category:{ name:'Bags'    } },
-  { _id:'p3', name:'Gold Hoop Earrings',  slug:'gold-hoop-earrings',  price:42,  discountPrice:null, images:[''], category:{ name:'Jewelry' } },
-  { _id:'p4', name:'Pearl Drop Necklace', slug:'pearl-drop-necklace', price:80,  discountPrice:64,  images:[''], category:{ name:'Jewelry' } },
-];
+// Featured products loaded from API
 
 const CATEGORIES = [
   { name:'Accessories', slug:'accessories', image:'accessories.jpg' },
@@ -129,7 +126,19 @@ export default function ProductHome() {
   const [current, setCurrent]       = useState(0);
   const [paused, setPaused]         = useState(false);
   const [savedItems, setSavedItems] = useState([]);
+  const [featured, setFeatured]     = useState([]);
   const total = SLIDES.length;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getProducts({ limit: 4, sort: 'popular' });
+        setFeatured(data.products ?? data);
+      } catch {
+        // silently fall back to empty — home page still works
+      }
+    })();
+  }, []);
 
   const next = useCallback(() => setCurrent(c => (c + 1) % total), [total]);
   const prev = useCallback(() => setCurrent(c => (c - 1 + total) % total), [total]);
@@ -241,7 +250,7 @@ export default function ProductHome() {
             <Link to="/products" className="btn-outline-dark" style={{ whiteSpace:'nowrap' }}>View All</Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {FEATURED.map(product => (
+            {featured.map(product => (
               <div key={product._id} className="product-card">
                 <button className="wishlist-btn" onClick={() => toggleSave(product._id)}>
                   <svg width="15" height="15" viewBox="0 0 24 24"
@@ -268,11 +277,11 @@ export default function ProductHome() {
                   <div className="flex items-center gap-2">
                     {product.discountPrice ? (
                       <>
-                        <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.05rem',fontWeight:600,color:'var(--maroon)' }}>${product.discountPrice}</span>
-                        <span style={{ fontSize:'0.78rem',color:'var(--muted)',textDecoration:'line-through' }}>${product.price}</span>
+                        <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.05rem',fontWeight:600,color:'var(--maroon)' }}>LKR {product.discountPrice}</span>
+                        <span style={{ fontSize:'0.78rem',color:'var(--muted)',textDecoration:'line-through' }}>LKR {product.price}</span>
                       </>
                     ) : (
-                      <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.05rem',fontWeight:600,color:'var(--charcoal)' }}>${product.price}</span>
+                      <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1.05rem',fontWeight:600,color:'var(--charcoal)' }}>LKR {product.price}</span>
                     )}
                   </div>
                 </div>
@@ -289,7 +298,7 @@ export default function ProductHome() {
               <em>Every piece</em> is curated with intention.<br />Every detail, deliberate.
             </h2>
             <p style={{ fontSize:'0.82rem',color:'rgba(255,255,255,.55)',lineHeight:1.8,maxWidth:'500px',margin:'0 auto 32px' }}>
-              We source only the finest materials from trusted artisans. Free shipping on orders over $75. Easy returns within 30 days.
+              We source only the finest materials from trusted artisans. Free shipping on orders over LKR 6000.00. Easy returns within 30 days.
             </p>
             <Link to="/products" className="btn-outline-light">Explore the Collection</Link>
           </div>

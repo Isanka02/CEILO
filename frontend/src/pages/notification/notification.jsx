@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
@@ -35,52 +35,6 @@ const STYLES = `
   .empty-state { border:1px dashed var(--border);border-radius:4px;padding:64px 24px;text-align:center; }
 `;
 
-// ─── Mock notifications — replace with API ────────────────────────────────
-const MOCK_NOTIFICATIONS = [
-  {
-    _id:'n1', type:'order', isRead:false,
-    title:'Your order has been shipped!',
-    message:'Order ORD-X7K2P9 is on its way. Expected delivery in 2–3 business days.',
-    createdAt:'2026-03-05T08:30:00Z',
-    link:'/orders/ORD-X7K2P9',
-  },
-  {
-    _id:'n2', type:'promo', isRead:false,
-    title:'Spring Sale — Up to 30% Off',
-    message:'Shop our new spring arrivals and enjoy exclusive discounts this week only.',
-    createdAt:'2026-03-04T12:00:00Z',
-    link:'/products',
-  },
-  {
-    _id:'n3', type:'order', isRead:true,
-    title:'Order Confirmed',
-    message:'We\'ve received your order ORD-X7K2P9. We\'re preparing it with care.',
-    createdAt:'2026-03-01T10:25:00Z',
-    link:'/orders/ORD-X7K2P9',
-  },
-  {
-    _id:'n4', type:'info', isRead:true,
-    title:'Welcome to CEILO',
-    message:'Thank you for joining us. Discover handpicked luxury pieces curated just for you.',
-    createdAt:'2026-02-20T09:00:00Z',
-    link:null,
-  },
-  {
-    _id:'n5', type:'order', isRead:true,
-    title:'Order Delivered',
-    message:'Order ORD-M3R8QT has been delivered. We hope you love your items!',
-    createdAt:'2026-02-22T16:40:00Z',
-    link:'/orders/ORD-M3R8QT',
-  },
-  {
-    _id:'n6', type:'promo', isRead:true,
-    title:'New Arrivals — Jewelry Collection',
-    message:'Our latest jewelry pieces are now live. Be the first to shop the new collection.',
-    createdAt:'2026-02-10T11:00:00Z',
-    link:'/category/jewelry',
-  },
-];
-
 const typeIcon = (type) => {
   if (type === 'order') return (
     <svg width="18" height="18" fill="none" stroke="var(--maroon)" strokeWidth="1.8" viewBox="0 0 24 24">
@@ -111,19 +65,40 @@ const timeAgo = (dateStr) => {
 };
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
-  const [tab, setTab] = useState('All');
+  const [notifications, setNotifications] = useState([]);
+  const [tab, setTab]                     = useState('All');
+  const [fetching, setFetching]           = useState(true);
+  const [apiError, setApiError]           = useState('');
+
+  // ── Fetch on mount ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getMyNotifications();
+        setNotifications(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load notifications.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const markRead = (id) => {
-    // TODO: await markAsRead(id);
-    setNotifications(ns => ns.map(n => n._id === id ? { ...n, isRead:true } : n));
+  const markRead = async (id) => {
+    try {
+      await markAsRead(id);
+      setNotifications(ns => ns.map(n => n._id === id ? { ...n, isRead: true } : n));
+    } catch { /* silently ignore */ }
   };
 
-  const markAllRead = () => {
-    // TODO: await Promise.all(unread.map(n => markAsRead(n._id)));
-    setNotifications(ns => ns.map(n => ({ ...n, isRead:true })));
+  const markAllRead = async () => {
+    try {
+      const unread = notifications.filter(n => !n.isRead);
+      await Promise.all(unread.map(n => markAsRead(n._id)));
+      setNotifications(ns => ns.map(n => ({ ...n, isRead: true })));
+    } catch { /* silently ignore */ }
   };
 
   const filtered = tab === 'All'
@@ -131,6 +106,17 @@ export default function Notifications() {
     : tab === 'Unread'
     ? notifications.filter(n => !n.isRead)
     : notifications.filter(n => n.type === tab.toLowerCase());
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div style={{ background:'var(--cream)', minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <p style={{ fontSize:'0.85rem', color:'var(--muted)', fontFamily:"'Jost',sans-serif" }}>Loading notifications…</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
@@ -148,6 +134,12 @@ export default function Notifications() {
         </div>
 
         <div className="max-w-3xl mx-auto px-6 py-10">
+
+          {apiError && (
+            <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background:'rgba(197,48,48,.08)', color:'#C53030', border:'1px solid rgba(197,48,48,.2)' }}>
+              {apiError}
+            </div>
+          )}
 
           {/* Title row */}
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">

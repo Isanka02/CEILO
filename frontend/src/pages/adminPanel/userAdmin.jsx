@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getAllUsers, blockUser, unblockUser } from '../../api/adminApi';
+import { getAllUsers, blockUser, unblockUser } from '../../api/adminApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -18,20 +18,25 @@ const STYLES = `
   .avatar-sm { width:34px;height:34px;border-radius:50%;background:rgba(107,27,42,.1);display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:0.85rem;font-weight:600;color:var(--maroon);flex-shrink:0; }
 `;
 
-// TODO: replace with real data from getAllUsers() API
-const MOCK_USERS = [
-  { _id:'u1', name:'Amara Silva',   email:'amara@example.com',  role:'user',  isBlocked:false, createdAt:'2025-10-01', orders:12 },
-  { _id:'u2', name:'Priya Mendis',  email:'priya@example.com',  role:'user',  isBlocked:false, createdAt:'2025-11-14', orders: 5 },
-  { _id:'u3', name:'Kavya Perera',  email:'kavya@example.com',  role:'admin', isBlocked:false, createdAt:'2025-09-03', orders: 0 },
-  { _id:'u4', name:'Riya Fernando', email:'riya@example.com',   role:'user',  isBlocked:true,  createdAt:'2025-12-20', orders: 3 },
-  { _id:'u5', name:'Nadia Raj',     email:'nadia@example.com',  role:'user',  isBlocked:false, createdAt:'2026-01-08', orders: 8 },
-];
-
 export default function UserAdmin() {
-  const [users, setUsers]   = useState(MOCK_USERS);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [actionId, setActionId] = useState(null);
+  const [users, setUsers]       = useState([]);
+  const [search, setSearch]     = useState('');
+  const [filter, setFilter]     = useState('all');
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getAllUsers();
+        setUsers(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load users.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const filtered = users.filter(u => {
     const matchFilter = filter === 'all' || (filter === 'blocked' ? u.isBlocked : filter === 'admin' ? u.role === 'admin' : !u.isBlocked && u.role === 'user');
@@ -41,20 +46,34 @@ export default function UserAdmin() {
 
   const handleBlock = async (userId) => {
     try {
-      // await blockUser(userId);
+      await blockUser(userId);
       setUsers(p => p.map(u => u._id === userId ? { ...u, isBlocked: true } : u));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to block user.');
+    }
   };
 
   const handleUnblock = async (userId) => {
     try {
-      // await unblockUser(userId);
+      await unblockUser(userId);
       setUsers(p => p.map(u => u._id === userId ? { ...u, isBlocked: false } : u));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to unblock user.');
+    }
   };
 
   const initials = name => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const fmtDate  = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading users…</p>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -67,6 +86,12 @@ export default function UserAdmin() {
           <main className="flex-1 min-w-0">
             <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.7rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '4px' }}>Users</h1>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '28px' }}>Manage customer accounts and access</p>
+
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Filters */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">

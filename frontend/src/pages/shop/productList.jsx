@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
@@ -29,21 +29,6 @@ const STYLES = `
   .pagination-btn:disabled { opacity:.4;cursor:not-allowed; }
 `;
 
-// TODO: replace with real data from API
-const MOCK_CATEGORIES = [
-  { _id:'c1',name:'Accessories' },{ _id:'c2',name:'Tops' },{ _id:'c3',name:'Bags' },{ _id:'c4',name:'Jewelry' },
-];
-const MOCK_PRODUCTS = Array.from({ length: 12 }, (_, i) => ({
-  _id: `p${i+1}`,
-  name: ['Silk Draped Blouse','Maroon Leather Tote','Gold Hoop Earrings','Pearl Drop Necklace','Cashmere Wrap Scarf','Velvet Clutch','Diamond Stud Earrings','Leather Crossbody','Satin Slip Dress','Chain Belt','Suede Ankle Boots','Crystal Bracelet'][i],
-  slug: ['silk-draped-blouse','maroon-leather-tote','gold-hoop-earrings','pearl-drop-necklace','cashmere-wrap-scarf','velvet-clutch','diamond-stud-earrings','leather-crossbody','satin-slip-dress','chain-belt','suede-ankle-boots','crystal-bracelet'][i],
-  price: [89,145,42,80,120,95,210,165,130,55,175,68][i],
-  discountPrice: [69,null,null,64,null,75,null,null,99,null,null,null][i],
-  images: [''],
-  category: { _id: ['c2','c3','c4','c4','c1','c3','c4','c3','c2','c1','c1','c4'][i], name: ['Tops','Bags','Jewelry','Jewelry','Accessories','Bags','Jewelry','Bags','Tops','Accessories','Accessories','Jewelry'][i] },
-  averageRating: [4.8,4.5,4.9,4.7,4.6,4.3,5.0,4.4,4.7,4.1,4.6,4.8][i],
-}));
-
 const StarMini = ({ rating }) => (
   <div className="flex items-center gap-0.5">
     {[1,2,3,4,5].map(i => (
@@ -57,35 +42,63 @@ const StarMini = ({ rating }) => (
 
 export default function ProductList() {
   const [searchParams] = useSearchParams();
-  const [sort, setSort]             = useState('newest');
+  const [sort, setSort]                 = useState('newest');
   const [selectedCats, setSelectedCats] = useState([]);
-  const [minPrice, setMinPrice]     = useState('');
-  const [maxPrice, setMaxPrice]     = useState('');
-  const [keyword, setKeyword]       = useState(searchParams.get('keyword') || '');
-  const [page, setPage]             = useState(1);
-  const [savedItems, setSavedItems] = useState([]);
+  const [minPrice, setMinPrice]         = useState('');
+  const [maxPrice, setMaxPrice]         = useState('');
+  const [keyword, setKeyword]           = useState(searchParams.get('keyword') || '');
+  const [page, setPage]                 = useState(1);
+  const [savedItems, setSavedItems]     = useState([]);
   const [mobileFilter, setMobileFilter] = useState(false);
+  const [products, setProducts]         = useState([]);
+  const [total, setTotal]               = useState(0);
+  const [pages, setPages]               = useState(1);
+  const [categories, setCategories]     = useState([]);
+  const [fetching, setFetching]         = useState(true);
+  const [apiError, setApiError]         = useState('');
   const LIMIT = 8;
 
-  const toggleCat = id => setSelectedCats(p => p.includes(id) ? p.filter(c => c !== id) : [...p, id]);
+  // Fetch categories once on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getCategories();
+        setCategories(data);
+      } catch { /* categories are optional — fail silently */ }
+    })();
+  }, []);
+
+  // Fetch products whenever filters/page change — debounced via useCallback
+  const fetchProducts = useCallback(async () => {
+    setFetching(true);
+    try {
+      const params = {
+        page,
+        limit: LIMIT,
+        sort,
+        ...(keyword   ? { keyword }                     : {}),
+        ...(selectedCats.length ? { category: selectedCats[0] } : {}),
+        ...(minPrice  ? { minPrice }                    : {}),
+        ...(maxPrice  ? { maxPrice }                    : {}),
+      };
+      const { data } = await getProducts(params);
+      setProducts(data.products ?? data);
+      setTotal(data.total ?? (data.products ?? data).length);
+      setPages(data.pages ?? Math.ceil((data.total ?? (data.products ?? data).length) / LIMIT));
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to load products.');
+    } finally {
+      setFetching(false);
+    }
+  }, [sort, selectedCats, minPrice, maxPrice, keyword, page]);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  const toggleCat = id => { setSelectedCats(p => p.includes(id) ? p.filter(c => c !== id) : [...p, id]); setPage(1); };
   const toggleSave = id => setSavedItems(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
 
-  const filtered = MOCK_PRODUCTS.filter(p => {
-    if (keyword && !p.name.toLowerCase().includes(keyword.toLowerCase())) return false;
-    if (selectedCats.length && !selectedCats.includes(p.category._id)) return false;
-    if (minPrice && p.price < Number(minPrice)) return false;
-    if (maxPrice && p.price > Number(maxPrice)) return false;
-    return true;
-  }).sort((a, b) => {
-    if (sort === 'price_asc')  return a.price - b.price;
-    if (sort === 'price_desc') return b.price - a.price;
-    if (sort === 'popular')    return b.averageRating - a.averageRating;
-    return 0;
-  });
-
-  const pages   = Math.ceil(filtered.length / LIMIT);
-  const visible = filtered.slice((page - 1) * LIMIT, page * LIMIT);
-  const activeFilters = [...selectedCats.map(id => MOCK_CATEGORIES.find(c => c._id === id)?.name).filter(Boolean), ...(minPrice || maxPrice ? [`$${minPrice||0}–$${maxPrice||'∞'}`] : [])];
+  const visible       = products;
+  const activeFilters = [...selectedCats.map(id => categories.find(c => c._id === id)?.name).filter(Boolean), ...(minPrice || maxPrice ? [`$${minPrice||0}–$${maxPrice||'∞'}`] : [])];
 
   const clearAll = () => { setSelectedCats([]); setMinPrice(''); setMaxPrice(''); setKeyword(''); setPage(1); };
 
@@ -105,7 +118,7 @@ export default function ProductList() {
       {/* Categories */}
       <div className="mb-6">
         <label className="filter-label">Category</label>
-        {MOCK_CATEGORIES.map(cat => (
+        {categories.map(cat => (
           <label key={cat._id} className="filter-check">
             <input type="checkbox" checked={selectedCats.includes(cat._id)} onChange={() => { toggleCat(cat._id); setPage(1); }} />
             {cat.name}
@@ -158,7 +171,7 @@ export default function ProductList() {
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
               <div className="flex items-center gap-3 flex-wrap">
-                <p style={{ fontSize:'0.78rem',color:'var(--muted)' }}>{filtered.length} product{filtered.length !== 1 ? 's' : ''}</p>
+                <p style={{ fontSize:'0.78rem',color:'var(--muted)' }}>{total} product{total !== 1 ? 's' : ''}</p>
                 {activeFilters.map(f => (
                   <span key={f} className="badge">{f} <span onClick={clearAll}>✕</span></span>
                 ))}
@@ -190,7 +203,11 @@ export default function ProductList() {
             )}
 
             {/* Products grid */}
-            {visible.length === 0 ? (
+            {fetching ? (
+              <div className="text-center py-20" style={{ color:'var(--muted)', fontSize:'0.85rem' }}>Loading products…</div>
+            ) : apiError ? (
+              <div className="text-center py-20" style={{ color:'#C53030', fontSize:'0.85rem' }}>{apiError}</div>
+            ) : visible.length === 0 ? (
               <div className="text-center py-20" style={{ border:'1px dashed var(--border)',borderRadius:'4px' }}>
                 <svg width="36" height="36" fill="none" stroke="#C4B5B8" strokeWidth="1.5" viewBox="0 0 24 24" style={{ margin:'0 auto 12px' }}>
                   <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
@@ -232,11 +249,11 @@ export default function ProductList() {
                       <div className="flex items-center gap-2 mt-2">
                         {product.discountPrice ? (
                           <>
-                            <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--maroon)' }}>${product.discountPrice}</span>
-                            <span style={{ fontSize:'0.75rem',color:'var(--muted)',textDecoration:'line-through' }}>${product.price}</span>
+                            <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--maroon)' }}>LKR {product.discountPrice}</span>
+                            <span style={{ fontSize:'0.75rem',color:'var(--muted)',textDecoration:'line-through' }}>LKR{product.price}</span>
                           </>
                         ) : (
-                          <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--charcoal)' }}>${product.price}</span>
+                          <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--charcoal)' }}>LKR {product.price}</span>
                         )}
                       </div>
                     </div>

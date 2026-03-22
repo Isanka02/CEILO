@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
@@ -28,55 +28,52 @@ const STYLES = `
 
 const TABS = ['All','Pending','Processing','Shipped','Delivered','Canceled'];
 
-// ─── Mock orders — replace with API ──────────────────────────────────────────
-const MOCK_ORDERS = [
-  {
-    _id:'ORD-X7K2P9', createdAt:'2026-03-01T10:22:00Z', orderStatus:'shipped',
-    paymentStatus:'pending', totalPrice:265, shippingPrice:12,
-    items:[
-      { name:'Silk Draped Blouse',  image:'', price:69  },
-      { name:'Pearl Drop Necklace', image:'', price:64  },
-      { name:'Cashmere Wrap Scarf', image:'', price:120 },
-    ],
-  },
-  {
-    _id:'ORD-M3R8QT', createdAt:'2026-02-18T14:05:00Z', orderStatus:'delivered',
-    paymentStatus:'paid', totalPrice:89, shippingPrice:0,
-    items:[
-      { name:'Gold Hoop Earrings', image:'', price:42 },
-      { name:'Chain Belt',         image:'', price:55 },
-    ],
-  },
-  {
-    _id:'ORD-K9W4LZ', createdAt:'2026-01-30T09:11:00Z', orderStatus:'canceled',
-    paymentStatus:'pending', totalPrice:145, shippingPrice:0,
-    items:[
-      { name:'Maroon Leather Tote', image:'', price:145 },
-    ],
-  },
-  {
-    _id:'ORD-P2N6YB', createdAt:'2026-01-12T16:44:00Z', orderStatus:'delivered',
-    paymentStatus:'paid', totalPrice:80, shippingPrice:0,
-    items:[
-      { name:'Pearl Drop Necklace', image:'', price:80 },
-    ],
-  },
-];
-
 const statusLabel = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 export default function MyOrders() {
-  const [tab, setTab] = useState('All');
+  const [orders, setOrders]   = useState([]);
+  const [tab, setTab]         = useState('All');
+  const [fetching, setFetching] = useState(true);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getMyOrders();
+        setOrders(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load orders. Please refresh.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const filtered = tab === 'All'
-    ? MOCK_ORDERS
-    : MOCK_ORDERS.filter(o => o.orderStatus === tab.toLowerCase());
+    ? orders
+    : orders.filter(o => o.orderStatus === tab.toLowerCase());
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading orders…</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
       <style>{STYLES}</style>
       <Header />
       <div style={{ background:'var(--cream)', minHeight:'100vh', fontFamily:"'Jost',sans-serif", paddingBottom:'64px' }}>
+        {apiError && (
+          <div style={{ background:'rgba(197,48,48,.08)', color:'#C53030', border:'1px solid rgba(197,48,48,.2)', padding:'12px 6%', fontSize:'0.82rem' }}>
+            {apiError}
+          </div>
+        )}
 
         {/* Page header */}
         <div style={{ borderBottom:'1px solid var(--border)', background:'#fff', padding:'20px 6%' }}>
@@ -99,7 +96,7 @@ export default function MyOrders() {
                 {t}
                 {t !== 'All' && (
                   <span style={{ marginLeft:'6px', fontSize:'0.6rem', background: tab === t ? 'var(--maroon)' : 'var(--border)', color: tab === t ? '#fff' : 'var(--muted)', borderRadius:'99px', padding:'1px 6px' }}>
-                    {MOCK_ORDERS.filter(o => o.orderStatus === t.toLowerCase()).length}
+                    {orders.filter(o => o.orderStatus === t.toLowerCase()).length}
                   </span>
                 )}
               </button>
@@ -135,7 +132,7 @@ export default function MyOrders() {
                       </div>
                       <div>
                         <p style={{ fontSize:'0.65rem', color:'var(--muted)', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'2px' }}>Total</p>
-                        <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color:'var(--charcoal)' }}>${order.totalPrice}</p>
+                        <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color:'var(--charcoal)' }}>LKR {order.totalPrice}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">

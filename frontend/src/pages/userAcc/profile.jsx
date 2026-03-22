@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getProfile, updateProfile } from '../../api/userApi';
+import { getProfile, updateProfile } from '../../api/userApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -21,16 +21,33 @@ const STYLES = `
 `;
 
 export default function Profile() {
-  // TODO: replace with real data from API / auth context
-  const [user, setUser] = useState({ name: 'Jane Doe', email: 'jane@example.com', avatar: '' });
-  const [form, setForm] = useState({ name: user.name });
-  const [nameError, setNameError] = useState('');
-  const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [avatarPreview, setAvatarPreview] = useState(user.avatar || '');
-  const [avatarFile, setAvatarFile] = useState(null);
+  const [user, setUser]                 = useState(null);
+  const [form, setForm]                 = useState({ name: '' });
+  const [nameError, setNameError]       = useState('');
+  const [editing, setEditing]           = useState(false);
+  const [loading, setLoading]           = useState(false);
+  const [fetching, setFetching]         = useState(true);
+  const [success, setSuccess]           = useState('');
+  const [apiError, setApiError]         = useState('');
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [avatarFile, setAvatarFile]     = useState(null);
   const fileRef = useRef();
+
+  // ── Fetch profile on mount ──────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getProfile();
+        setUser(data);
+        setForm({ name: data.name });
+        setAvatarPreview(data.avatar || '');
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load profile. Please refresh.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const isValidName = v => v.trim().length >= 2 && /^[a-zA-Z\s'-]+$/.test(v.trim());
 
@@ -50,6 +67,7 @@ export default function Profile() {
   const handleSubmit = async e => {
     e.preventDefault();
     setSuccess('');
+    setApiError('');
     if (!form.name.trim()) { setNameError('Name is required.'); return; }
     if (!isValidName(form.name)) { setNameError('Name must contain only letters, spaces, hyphens or apostrophes.'); return; }
     setLoading(true);
@@ -57,18 +75,54 @@ export default function Profile() {
       const formData = new FormData();
       formData.append('name', form.name.trim());
       if (avatarFile) formData.append('avatar', avatarFile);
-      // await updateProfile(formData);
-      console.log('Update profile:', form.name);
-      setUser(p => ({ ...p, name: form.name.trim() }));
+      const { data } = await updateProfile(formData);
+      // Update local state and sync localStorage so Header/Sidebar stay in sync
+      setUser(data);
+      setForm({ name: data.name });
+      setAvatarPreview(data.avatar || '');
+      setAvatarFile(null);
+      const stored = JSON.parse(localStorage.getItem('user') || '{}');
+      localStorage.setItem('user', JSON.stringify({ ...stored, name: data.name, avatar: data.avatar }));
       setEditing(false);
       setSuccess('Profile updated successfully.');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      console.error(err);
+      setApiError(err.response?.data?.message || 'Update failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setForm({ name: user.name });
+    setAvatarPreview(user.avatar || '');
+    setAvatarFile(null);
+    setNameError('');
+  };
+
+  // ── Loading / error states ──────────────────────────────────────────────────
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading profile…</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  if (!user) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: '#C53030', fontFamily: "'Jost',sans-serif" }}>{apiError}</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   const initials = user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
@@ -92,6 +146,13 @@ export default function Profile() {
               </div>
             )}
 
+            {/* API error */}
+            {apiError && (
+              <div className="mb-6 px-4 py-3 rounded-sm flex items-center gap-2 text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
+
             {/* Avatar section */}
             <div className="flex items-center gap-6 mb-8 pb-8" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="avatar-ring">
@@ -101,7 +162,6 @@ export default function Profile() {
                 }
               </div>
               <div>
-                {/* IMAGE: user avatar — circular, 96×96px, uploaded by user */}
                 <p style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--charcoal)', marginBottom: '4px' }}>{user.name}</p>
                 <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginBottom: '12px' }}>{user.email}</p>
                 {editing && (
@@ -146,8 +206,9 @@ export default function Profile() {
                 <div>
                   <label className="field-label">Member Since</label>
                   <input className="field-input" value={
-                    // TODO: replace with real date from user object e.g. new Date(user.createdAt).toLocaleDateString()
-                    'March 2025'
+                    user.createdAt
+                      ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+                      : '—'
                   } disabled />
                 </div>
               </div>
@@ -159,7 +220,7 @@ export default function Profile() {
                 ) : (
                   <>
                     <button type="submit" className="btn-primary" disabled={loading}>{loading ? 'Saving…' : 'Save Changes'}</button>
-                    <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setForm({ name: user.name }); setAvatarPreview(user.avatar || ''); setAvatarFile(null); setNameError(''); }}>Cancel</button>
+                    <button type="button" className="btn-ghost" onClick={handleCancel}>Cancel</button>
                   </>
                 )}
               </div>

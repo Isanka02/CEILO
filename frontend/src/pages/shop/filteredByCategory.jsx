@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import { getProducts } from '../../api/productApi';
-import { getCategoryBySlug } from '../../api/categoryApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,300&family=Jost:wght@300;400;500&display=swap');
@@ -27,17 +26,6 @@ const CATEGORY_MAP = {
   jewelry:     { name:'Jewelry',     description:'Delicate pieces that tell a story.', image:'/cat-j.jpg' },
 };
 
-const ALL_PRODUCTS = [
-  { _id:'p1',name:'Silk Draped Blouse',  slug:'silk-draped-blouse',  price:89, discountPrice:69,  images:[''],category:'clothing',       averageRating:4.8 },
-  { _id:'p2',name:'Maroon Leather Tote', slug:'maroon-leather-tote', price:145,discountPrice:null, images:[''],category:'makeup',       averageRating:4.5 },
-  { _id:'p3',name:'Gold Hoop Earrings',  slug:'gold-hoop-earrings',  price:42, discountPrice:null, images:[''],category:'jewelry',    averageRating:4.9 },
-  { _id:'p4',name:'Pearl Drop Necklace', slug:'pearl-drop-necklace', price:80, discountPrice:64,   images:[''],category:'jewelry',    averageRating:4.7 },
-  { _id:'p5',name:'Cashmere Wrap Scarf', slug:'cashmere-wrap-scarf', price:120,discountPrice:null, images:[''],category:'accessories',averageRating:4.6 },
-  { _id:'p6',name:'Velvet Clutch',       slug:'velvet-clutch',       price:95, discountPrice:75,   images:[''],category:'makeup',       averageRating:4.3 },
-  { _id:'p7',name:'Crystal Bracelet',    slug:'crystal-bracelet',    price:68, discountPrice:null, images:[''],category:'jewelry',    averageRating:4.8 },
-  { _id:'p8',name:'Chain Belt',          slug:'chain-belt',          price:55, discountPrice:null, images:[''],category:'accessories',averageRating:4.1 },
-];
-
 const StarMini = ({ r }) => (
   <div className="flex items-center gap-0.5">
     {[1,2,3,4,5].map(i => (
@@ -53,13 +41,23 @@ export default function FilteredByCategory() {
   const category    = CATEGORY_MAP[slug] || { name: slug, description: '' };
   const [sort, setSort]             = useState('newest');
   const [savedItems, setSavedItems] = useState([]);
+  const [products, setProducts]     = useState([]);
+  const [fetching, setFetching]     = useState(true);
+  const [apiError, setApiError]     = useState('');
 
-  const products = ALL_PRODUCTS.filter(p => p.category === slug).sort((a,b) => {
-    if (sort === 'price_asc')  return a.price - b.price;
-    if (sort === 'price_desc') return b.price - a.price;
-    if (sort === 'popular')    return b.averageRating - a.averageRating;
-    return 0;
-  });
+  useEffect(() => {
+    setFetching(true);
+    (async () => {
+      try {
+        const { data } = await getProducts({ category: slug, sort, limit: 50 });
+        setProducts(data.products ?? data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load products.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [slug, sort]);
 
   const toggleSave = id => setSavedItems(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
 
@@ -120,7 +118,11 @@ export default function FilteredByCategory() {
           </div>
 
           {/* Products grid */}
-          {products.length === 0 ? (
+          {fetching ? (
+            <div className="text-center py-20" style={{ color:'var(--muted)', fontSize:'0.85rem' }}>Loading products…</div>
+          ) : apiError ? (
+            <div className="text-center py-20" style={{ color:'#C53030', fontSize:'0.85rem' }}>{apiError}</div>
+          ) : products.length === 0 ? (
             <div className="text-center py-20" style={{ border:'1px dashed var(--border)',borderRadius:'4px' }}>
               <p style={{ fontSize:'0.85rem',color:'var(--muted)',marginBottom:'16px' }}>No products in this category yet.</p>
               <Link to="/products" style={{ fontSize:'0.72rem',color:'var(--maroon)',textDecoration:'none',borderBottom:'1px solid var(--maroon)',paddingBottom:'2px',letterSpacing:'0.08em',textTransform:'uppercase' }}>Browse All Products</Link>
@@ -155,8 +157,8 @@ export default function FilteredByCategory() {
                     <StarMini r={product.averageRating} />
                     <div className="flex items-center gap-2 mt-2">
                       {product.discountPrice
-                        ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--maroon)' }}>${product.discountPrice}</span><span style={{ fontSize:'0.75rem',color:'var(--muted)',textDecoration:'line-through' }}>${product.price}</span></>
-                        : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--charcoal)' }}>${product.price}</span>
+                        ? <><span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--maroon)' }}>LKR {product.discountPrice}</span><span style={{ fontSize:'0.75rem',color:'var(--muted)',textDecoration:'line-through' }}>LKR {product.price}</span></>
+                        : <span style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'1rem',fontWeight:600,color:'var(--charcoal)' }}>LKR {product.price}</span>
                       }
                     </div>
                   </div>

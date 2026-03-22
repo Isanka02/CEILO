@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getAllOrders, updateOrderStatus, markAsPaid } from '../../api/adminApi';
+import { getAllOrders, updateOrderStatus, markAsPaid } from '../../api/adminApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -28,22 +28,28 @@ const STATUS_STYLES = {
 
 const ORDER_STATUSES = ['pending','processing','shipped','delivered','canceled'];
 
-// TODO: replace with real data from getAllOrders() API
-const MOCK_ORDERS = [
-  { _id:'ORD001', user:{name:'Amara Silva',  email:'amara@example.com'}, createdAt:'2026-03-05', totalPrice:128.00, orderStatus:'shipped',    paymentStatus:'pending', items:[{name:'Silk Blouse'},{name:'Belt'}] },
-  { _id:'ORD002', user:{name:'Priya Mendis', email:'priya@example.com'}, createdAt:'2026-03-04', totalPrice: 64.50, orderStatus:'pending',    paymentStatus:'pending', items:[{name:'Gold Earrings'}] },
-  { _id:'ORD003', user:{name:'Kavya Perera', email:'kavya@example.com'}, createdAt:'2026-03-03', totalPrice: 89.00, orderStatus:'delivered',  paymentStatus:'paid',    items:[{name:'Maroon Handbag'}] },
-  { _id:'ORD004', user:{name:'Riya Fernando',email:'riya@example.com'},  createdAt:'2026-03-02', totalPrice:210.00, orderStatus:'processing', paymentStatus:'pending', items:[{name:'Cashmere Scarf'},{name:'Pearl Necklace'}] },
-  { _id:'ORD005', user:{name:'Nadia Raj',    email:'nadia@example.com'}, createdAt:'2026-03-01', totalPrice: 45.00, orderStatus:'canceled',   paymentStatus:'pending', items:[{name:'Sunglasses'}] },
-];
-
 export default function OrdersAdmin() {
-  const [orders, setOrders]     = useState(MOCK_ORDERS);
-  const [filter, setFilter]     = useState('all');
-  const [search, setSearch]     = useState('');
-  const [selected, setSelected] = useState(null); // order being edited
+  const [orders, setOrders]       = useState([]);
+  const [filter, setFilter]       = useState('all');
+  const [search, setSearch]       = useState('');
+  const [selected, setSelected]   = useState(null);
   const [newStatus, setNewStatus] = useState('');
-  const [updating, setUpdating] = useState(false);
+  const [updating, setUpdating]   = useState(false);
+  const [fetching, setFetching]   = useState(true);
+  const [apiError, setApiError]   = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getAllOrders();
+        setOrders(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load orders.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const filtered = orders.filter(o => {
     const matchStatus = filter === 'all' || o.orderStatus === filter;
@@ -55,21 +61,36 @@ export default function OrdersAdmin() {
     if (!newStatus || !selected) return;
     setUpdating(true);
     try {
-      // await updateOrderStatus(selected._id, { orderStatus: newStatus });
+      await updateOrderStatus(selected._id, { status: newStatus });
       setOrders(p => p.map(o => o._id === selected._id ? { ...o, orderStatus: newStatus } : o));
       setSelected(null); setNewStatus('');
-    } catch (err) { console.error(err); }
-    finally { setUpdating(false); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to update order status.');
+    } finally {
+      setUpdating(false);
+    }
   };
 
   const handleMarkPaid = async (orderId) => {
     try {
-      // await markAsPaid(orderId);
+      await markAsPaid(orderId);
       setOrders(p => p.map(o => o._id === orderId ? { ...o, paymentStatus: 'paid' } : o));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to mark order as paid.');
+    }
   };
 
   const fmtDate  = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading orders…</p>
+      </div>
+    </>
+  );
 
   return (
     <>
@@ -82,6 +103,12 @@ export default function OrdersAdmin() {
           <main className="flex-1 min-w-0">
             <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.7rem', fontWeight: 600, color: 'var(--charcoal)', marginBottom: '4px' }}>Orders</h1>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '28px' }}>Manage and update all customer orders</p>
+
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Filters + search */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-5">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
@@ -57,48 +57,68 @@ const statusDot   = s => {
   };
 };
 
-// ─── MOCK ORDER — replace with API call ──────────────────────────────────────
-const MOCK_ORDER = {
-  _id: 'ORD-X7K2P9',
-  createdAt: '2026-03-01T10:22:00Z',
-  orderStatus: 'shipped',
-  paymentStatus: 'pending',
-  paymentMethod: 'cod',
-  trackingNumber: 'SL123456789',
-  deliveryMethod: 'Express Delivery',
-  shippingPrice: 12,
-  totalPrice: 265,
-  shippingAddress: {
-    street: '42 Galle Road, Apt 3A',
-    city:   'Colombo',
-    state:  'Western',
-    zip:    '00300',
-    country:'Sri Lanka',
-  },
-  items: [
-    { _id:'p1', name:'Silk Draped Blouse',  image:'', price:69,  quantity:1, color:'Ivory', size:'M'   },
-    { _id:'p4', name:'Pearl Drop Necklace', image:'', price:64,  quantity:1, color:null,    size:null  },
-    { _id:'p5', name:'Cashmere Wrap Scarf', image:'', price:120, quantity:1, color:'Camel', size:null  },
-  ],
-};
-
 export default function OrderDetails() {
-  const { id } = useParams();
-  const order  = MOCK_ORDER; // TODO: replace with API fetch by id
-  const [showCancel, setShowCancel] = useState(false);
-  const [canceled,   setCanceled]   = useState(false);
+  const { id }                        = useParams();
+  const [order, setOrder]             = useState(null);
+  const [fetching, setFetching]       = useState(true);
+  const [apiError, setApiError]       = useState('');
+  const [showCancel, setShowCancel]   = useState(false);
+  const [canceling, setCanceling]     = useState(false);
 
-  const currentStatus = canceled ? 'canceled' : order.orderStatus;
-  const dotState      = statusDot(currentStatus);
-  const canCancel     = currentStatus === 'pending' && !canceled;
+  // ── Fetch order on mount ────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getOrderById(id);
+        setOrder(data);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load order.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, [id]);
 
-  const handleCancel = () => {
-    // TODO: await cancelOrder(order._id);
-    setCanceled(true);
-    setShowCancel(false);
+  const handleCancel = async () => {
+    setCanceling(true);
+    try {
+      await cancelOrder(order._id);
+      setOrder(p => ({ ...p, orderStatus: 'canceled' }));
+      setShowCancel(false);
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to cancel order.');
+    } finally {
+      setCanceling(false);
+    }
   };
 
-  const subtotal = order.items.reduce((s, i) => s + i.price * i.quantity, 0);
+  // ── Loading / error / not-found guards ─────────────────────────────────────
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div style={{ background:'var(--cream)', minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <p style={{ fontSize:'0.85rem', color:'var(--muted)', fontFamily:"'Jost',sans-serif" }}>Loading order…</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  if (!order) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div style={{ background:'var(--cream)', minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <p style={{ fontSize:'0.85rem', color:'#C53030', fontFamily:"'Jost',sans-serif" }}>{apiError || 'Order not found.'}</p>
+      </div>
+      <Footer />
+    </>
+  );
+
+  const currentStatus = order.orderStatus;
+  const dotState      = statusDot(currentStatus);
+  const canCancel     = currentStatus === 'pending';
+  const subtotal      = order.items.reduce((s, i) => s + i.price * i.quantity, 0);
 
   return (
     <>
@@ -118,6 +138,13 @@ export default function OrderDetails() {
         </div>
 
         <div className="max-w-5xl mx-auto px-6 py-10">
+
+          {/* API error */}
+          {apiError && (
+            <div className="mb-6 px-4 py-3 rounded-sm text-sm" style={{ background:'rgba(197,48,48,.08)', color:'#C53030', border:'1px solid rgba(197,48,48,.2)' }}>
+              {apiError}
+            </div>
+          )}
 
           {/* Title row */}
           <div className="flex items-start justify-between flex-wrap gap-4 mb-8">
@@ -163,7 +190,7 @@ export default function OrderDetails() {
                         {item.quantity > 1 && ` · Qty ${item.quantity}`}
                       </p>
                       <p style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'0.95rem', fontWeight:600, color:'var(--charcoal)' }}>
-                        ${item.price * item.quantity}
+                        LKR {item.price * item.quantity}
                       </p>
                     </div>
                     <Link to={`/products/${item._id}`} style={{ fontSize:'0.68rem', color:'var(--maroon)', textDecoration:'none', letterSpacing:'0.08em', textTransform:'uppercase', alignSelf:'center', whiteSpace:'nowrap' }}>
@@ -177,20 +204,57 @@ export default function OrderDetails() {
               {currentStatus !== 'canceled' && (
                 <div className="detail-card">
                   <p className="card-title">Order Progress</p>
-                  <div className="timeline">
-                    {STATUS_STEPS.map(step => (
-                      <div key={step} className="timeline-step">
-                        <div className={`timeline-dot ${dotState(step)}`} />
-                        <p style={{ fontSize:'0.78rem', fontWeight: dotState(step) ? 500 : 400, color: dotState(step) ? 'var(--charcoal)' : 'var(--muted)', marginBottom:'2px' }}>
-                          {statusLabel(step)}
-                        </p>
-                        {step === 'shipped' && order.trackingNumber && dotState(step) && (
-                          <p style={{ fontSize:'0.7rem', color:'var(--maroon)' }}>
-                            Tracking: {order.trackingNumber}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                  <div style={{ padding: '8px 0 4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', position: 'relative' }}>
+                      {STATUS_STEPS.map((step, i) => {
+                        const state = dotState(step); // 'done' | 'active' | ''
+                        const isLast = i === STATUS_STEPS.length - 1;
+                        return (
+                          <React.Fragment key={step}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: isLast ? 'none' : 1, minWidth: '60px' }}>
+                              {/* Circle */}
+                              <div style={{
+                                width: '32px', height: '32px', borderRadius: '50%', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                background: state === 'done' ? '#6B1B2A' : 'transparent',
+                                border: state === 'done' ? 'none' : `2px solid ${state === 'active' ? '#6B1B2A' : 'var(--border)'}`,
+                                transition: 'all .3s',
+                              }}>
+                                {state === 'done' ? (
+                                  <svg width="14" height="14" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                  </svg>
+                                ) : state === 'active' ? (
+                                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#6B1B2A' }} />
+                                ) : null}
+                              </div>
+                              {/* Label */}
+                              <p style={{
+                                fontSize: '0.72rem', marginTop: '8px', textAlign: 'center',
+                                color: state === 'done' || state === 'active' ? 'var(--charcoal)' : 'var(--muted)',
+                                fontWeight: state === 'active' ? 500 : 400,
+                                letterSpacing: '0.04em', textTransform: 'capitalize',
+                              }}>
+                                {statusLabel(step)}
+                              </p>
+                              {step === 'shipped' && order.trackingNumber && state !== '' && (
+                                <p style={{ fontSize: '0.65rem', color: '#6B1B2A', marginTop: '2px', textAlign: 'center' }}>
+                                  {order.trackingNumber}
+                                </p>
+                              )}
+                            </div>
+                            {/* Connector line between steps */}
+                            {!isLast && (
+                              <div style={{
+                                flex: 1, height: '2px', marginTop: '15px',
+                                background: state === 'done' ? '#6B1B2A' : 'var(--border)',
+                                transition: 'background .3s',
+                              }} />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -213,17 +277,17 @@ export default function OrderDetails() {
 
                 <div className="summary-row">
                   <span style={{ color:'var(--muted)' }}>Subtotal</span>
-                  <span>${subtotal}</span>
+                  <span>LKR {subtotal}</span>
                 </div>
                 <div className="summary-row">
                   <span style={{ color:'var(--muted)' }}>Shipping</span>
                   <span style={{ color: order.shippingPrice === 0 ? '#2D7A4F' : 'var(--charcoal)' }}>
-                    {order.shippingPrice === 0 ? 'Free' : `$${order.shippingPrice}`}
+                    {order.shippingPrice === 0 ? 'Free' : `LKR ${order.shippingPrice}`}
                   </span>
                 </div>
                 <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', borderTop:'1px solid var(--border)', marginTop:'6px' }}>
                   <span style={{ fontFamily:"'Cormorant Garamond',serif", fontWeight:600, color:'var(--charcoal)' }}>Total</span>
-                  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.1rem', fontWeight:600, color:'var(--maroon)' }}>${order.totalPrice}</span>
+                  <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.1rem', fontWeight:600, color:'var(--maroon)' }}>LKR {order.totalPrice}</span>
                 </div>
 
                 <div style={{ borderTop:'1px solid var(--border)', marginTop:'18px', paddingTop:'18px' }}>
@@ -267,8 +331,8 @@ export default function OrderDetails() {
               <button onClick={() => setShowCancel(false)} className="btn-outline" style={{ flex:1, textAlign:'center' }}>
                 Keep Order
               </button>
-              <button onClick={handleCancel} className="btn-cancel" style={{ flex:1 }}>
-                Yes, Cancel
+              <button onClick={handleCancel} className="btn-cancel" style={{ flex:1 }} disabled={canceling}>
+                {canceling ? 'Canceling…' : 'Yes, Cancel'}
               </button>
             </div>
           </div>

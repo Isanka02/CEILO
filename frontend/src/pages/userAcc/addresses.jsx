@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import Sidebar from '../../components/layout/Sidebar';
-// import { getProfile, addAddress, deleteAddress } from '../../api/userApi';
+import { getProfile, addAddress, deleteAddress } from '../../api/userApi';
 
 const STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Jost:wght@300;400;500&display=swap');
@@ -29,22 +29,35 @@ const validate = f => {
   if (!f.street.trim())  e.street  = 'Street is required.';
   if (!f.city.trim())    e.city    = 'City is required.';
   if (!f.zip.trim())     e.zip     = 'ZIP code is required.';
-  else if (!/^[A-Za-z0-9\s\-]{3,10}$/.test(f.zip.trim())) e.zip = 'Enter a valid ZIP code.';
+  else if (!/^[A-Za-z0-9\s-]{3,10}$/.test(f.zip.trim())) e.zip = 'Enter a valid ZIP code.';
   if (!f.country.trim()) e.country = 'Country is required.';
   return e;
 };
 
 export default function Addresses() {
-  // TODO: replace with real data fetched from API on mount
-  const [addresses, setAddresses] = useState([
-    { _id: '1', label: 'Home', street: '123 Elm Street', city: 'Colombo', state: 'Western', zip: '00100', country: 'Sri Lanka' },
-  ]);
+  const [addresses, setAddresses] = useState([]);
+  const [fetching, setFetching]   = useState(true);
   const [showForm, setShowForm]   = useState(false);
   const [form, setForm]           = useState(emptyForm);
   const [errors, setErrors]       = useState({});
   const [loading, setLoading]     = useState(false);
   const [touched, setTouched]     = useState({});
   const [deleteId, setDeleteId]   = useState(null);
+  const [apiError, setApiError]   = useState('');
+
+  // ── Fetch addresses on mount via getProfile ─────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await getProfile();
+        setAddresses(data.addresses || []);
+      } catch (err) {
+        setApiError(err.response?.data?.message || 'Failed to load addresses. Please refresh.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const handleChange = e => {
     const { name, value } = e.target;
@@ -69,22 +82,39 @@ export default function Addresses() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
     try {
-      // const updated = await addAddress(form);
-      // setAddresses(updated);
-      const newAddr = { ...form, _id: Date.now().toString() };
-      setAddresses(p => [...p, newAddr]);
+      const { data } = await addAddress(form);
+      // Backend returns the full updated addresses array
+      setAddresses(data);
       setForm(emptyForm); setErrors({}); setTouched({}); setShowForm(false);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to save address.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async id => {
     try {
-      // await deleteAddress(id);
-      setAddresses(p => p.filter(a => a._id !== id));
-    } catch (err) { console.error(err); }
-    finally { setDeleteId(null); }
+      const { data } = await deleteAddress(id);
+      // Backend returns the full updated addresses array
+      setAddresses(data);
+    } catch (err) {
+      setApiError(err.response?.data?.message || 'Failed to delete address.');
+    } finally {
+      setDeleteId(null);
+    }
   };
+
+  if (fetching) return (
+    <>
+      <style>{STYLES}</style>
+      <Header />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--cream)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', fontFamily: "'Jost',sans-serif" }}>Loading addresses…</p>
+      </div>
+      <Footer />
+    </>
+  );
 
   return (
     <>
@@ -102,6 +132,13 @@ export default function Addresses() {
               )}
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginBottom: '32px' }}>Manage your saved delivery addresses</p>
+
+            {/* API error */}
+            {apiError && (
+              <div className="mb-5 px-4 py-3 rounded-sm text-sm" style={{ background: 'rgba(197,48,48,.08)', color: '#C53030', border: '1px solid rgba(197,48,48,.2)' }}>
+                {apiError}
+              </div>
+            )}
 
             {/* Address cards */}
             {addresses.length === 0 && !showForm && (
