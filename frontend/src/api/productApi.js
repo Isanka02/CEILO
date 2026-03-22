@@ -2,8 +2,15 @@ import api from './axiosInstance';
 
 export const getProducts      = (params) => api.get('/products', { params });   // ?category=&search=&page=
 export const getProductBySlug = (slug)   => api.get(`/products/${slug}`);
-export const createProduct    = (data)   => api.post('/products', data);         // FormData with images[]
-export const updateProduct    = (id, data) => api.put(`/products/${id}`, data);  // FormData
+export const createProduct    = (data)   => api.post('/products', data, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+});         
+
+// FormData with images[]
+export const updateProduct = (id, data) => api.put(`/products/${id}`, data, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+});
+
 export const deleteProduct    = (id)     => api.delete(`/products/${id}`);
 
 export const getProductReviews = (productId)       => api.get(`/products/${productId}/reviews`);

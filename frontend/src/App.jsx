@@ -1,7 +1,6 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-
-
+import CartProvider from './context/CartProvider';
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 import Login         from './pages/auth/login';
@@ -39,11 +38,11 @@ import OrdersAdmin           from './pages/adminPanel/ordersAdmin';
 import ProductAdmin          from './pages/adminPanel/productAdmin';
 import SendNotificationAdmin from './pages/adminPanel/sendNotificationAdmin';
 import UserAdmin             from './pages/adminPanel/userAdmin';
-import ShopReviewsAdmin from './pages/adminPanel/shopReviewsAdmin';
-
+import ShopReviewsAdmin      from './pages/adminPanel/shopReviewsAdmin';
 
 function App() {
   return (
+    <CartProvider>
       <Routes>
 
         {/* ── Public / Shop ─────────────────────────────────────────────── */}
@@ -83,11 +82,10 @@ function App() {
         <Route path="/admin/products"           element={<ProductAdmin />} />
         <Route path="/admin/notifications"      element={<SendNotificationAdmin />} />
         <Route path="/admin/users"              element={<UserAdmin />} />
-        <Route path="/admin/shop-reviews"       element={<ShopReviewsAdmin/>} />                 
-
+        <Route path="/admin/shop-reviews"       element={<ShopReviewsAdmin />} />
 
       </Routes>
-
+    </CartProvider>
   );
 }
 

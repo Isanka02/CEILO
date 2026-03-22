@@ -14,3 +14,6 @@ export const getAnalytics = () => api.get('/admin/analytics');
 
 // Notifications
 export const sendNotification = (data) => api.post('/admin/notifications', data);
+
+
+export const markAsPaid = (id) => api.put(`/orders/${id}/mark-paid`);
